@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Orbit
 
-## Getting Started
+Internal platform behind **AS Groups · Digital Marketing**. "Orbit" is an internal name only; client-facing material says "our own platform".
 
-First, run the development server:
+This repo is **stage 1: the approval kit**. It's the bare minimum Meta needs to see before approving us as a WhatsApp Tech Provider:
+
+- **Send test** (`/`): sends a WhatsApp message from Meta's free test number (App Review video 1). It can also produce a one-tap wa.me link, which is the pilot mode.
+- **Templates** (`/templates`): creates a message template and submits it to Meta, then shows its approval status (App Review video 2).
+- **Messages** (`/messages`): everything sent and received, with delivery ticks. Replies arrive through the webhook.
+- **Webhook** (`/api/webhooks/meta`): checks Meta's signature, stores incoming messages and delivery statuses, records template approvals, and handles STOP / வேண்டாம்.
+- **Privacy** (`/privacy`) and **Terms** (`/terms`): Meta's App Review needs these. They're drafts; our advocate partner should review them.
+
+The database schema already covers all of module 1 (the review engine), so stage 2 builds on it.
+
+## How it's put together
+
+| Piece | Where |
+|---|---|
+| Messaging adapter: the one place that sends (`wame`, `meta`, `provider` modes) | `src/lib/messaging/` |
+| Ground rules: consent, STOP, quiet hours 20:00–9:00 | `src/lib/messaging/rules.ts` |
+| Meta Graph API, templates, webhook parsing, signature check | `src/lib/meta/` |
+| Send + log in one call | `src/lib/send.ts` |
+| Database schema with row-level security | `supabase/migrations/0001_module1.sql` |
+| Login gate (Next 16 `proxy.ts`, formerly middleware) | `src/proxy.ts` |
+
+Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta WhatsApp Cloud API with the Graph API version pinned in `GRAPH_API_VERSION`.
+
+## Setup (about an hour, once)
+
+### 1. Supabase
+1. Create a project at supabase.com. Pick the **Mumbai** region.
+2. In **SQL Editor**, paste and run `supabase/migrations/0001_module1.sql`.
+3. In **Authentication → Sign In / Providers**, turn off "Allow new users to sign up". We add people ourselves.
+4. In **Authentication → Users → Add user**, add yourself with an email and password.
+5. Make yourself agency staff (SQL Editor):
+   ```sql
+   update profiles set is_agency = true
+   where id = (select id from auth.users where email = 'you@example.com');
+   ```
+6. In **Project Settings → API**, copy the URL, the publishable key and the secret key.
+
+### 2. Meta app and test number (no business verification needed yet)
+1. Go to developers.facebook.com → **My Apps → Create app**, and choose the WhatsApp use case.
+2. Open **WhatsApp → API Setup**. Copy the **temporary access token**, the **Phone number ID** and the **WhatsApp Business Account ID**.
+3. Under **To**, add your own phone number as a recipient. The test number only delivers to numbers you add here, up to 5.
+4. Open **App settings → Basic** and copy the **App secret**.
+
+The temporary token expires after 24 hours. For longer testing, create a system user token in Business Settings.
+
+### 3. Vercel
+1. Import `castroarun/orbit` into Vercel.
+2. Add every value from `.env.example` under **Settings → Environment Variables**, then deploy.
+
+### 4. Connect the webhook
+1. In Meta, go to **WhatsApp → Configuration → Webhook**.
+2. Set the callback URL to `https://<your-vercel-domain>/api/webhooks/meta`.
+3. Set the verify token to the same value as `META_WEBHOOK_VERIFY_TOKEN`.
+4. Subscribe to **messages** and **message_template_status_update**.
+
+### 5. Try it, then record the App Review videos
+1. Log in and send `hello_world` to your phone. Reply from your phone, and the reply appears under Messages.
+2. **Video 1:** record the screen while sending a message from Orbit, and show it arriving in WhatsApp.
+3. **Video 2:** record the screen while creating a template in Orbit, and show it appearing as PENDING or APPROVED.
+4. Submit the videos for App Review once AS Groups' business verification is done.
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # fill in values
+npm install
+npm run dev                  # http://localhost:3000
+npm test                     # unit tests
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Next stages
+- **Stage 2:** customers, Excel import, tracked short links (`/r/<code>`), daily rating check, the message schedule with one-tap sending, and the counter phone screen.
+- **Stage 3 (after Meta approval):** Embedded Signup v4 with Coexistence, so clients connect their own number. Automatic sending, complaint detection, check-backs.
+- **Stage 4 (after Google approval):** reviews read in, AI-drafted replies, owner approval.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The plan and decisions live in the "Digital Marketing Business" Claude project: `orbit-handoff.md`, `orbit-build-plan.md` and `review-engine.md`.
