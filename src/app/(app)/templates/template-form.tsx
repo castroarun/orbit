@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import { templateView } from "@/lib/meta/template-view";
 import type { TemplateComponent } from "@/lib/meta/templates";
 import { STARTERS, type Starter } from "@/lib/template-starters";
 import Link from "next/link";
 import { createTemplateAction, editTemplateAction } from "../../actions";
-import { PendingButton } from "../pending-button";
 import { WhatsAppBubble } from "../whatsapp-bubble";
 
 const blanksIn = (text: string) => {
@@ -43,6 +42,16 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
   const [examples, setExamples] = useState<string[]>(init.examples);
   const [footer, setFooter] = useState(init.footer);
   const categoryLocked = editing?.status === "APPROVED";
+  const [language, setLanguage] = useState(editing?.language ?? "en");
+
+  // Submit without React's automatic form reset, so an error never wipes what was typed.
+  const [state, runAction] = useActionState(editing ? editTemplateAction : createTemplateAction, {});
+  const [pending, startTransition] = useTransition();
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    startTransition(() => runAction(data));
+  };
 
   const starter = STARTERS.find((x) => x.id === starterId) ?? first;
   const applyStarter = (id: string) => {
@@ -95,7 +104,7 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
   }, [headerType, headerText, body, footer]);
 
   return (
-    <form action={editing ? editTemplateAction : createTemplateAction} className="grid gap-6 lg:grid-cols-[1fr_340px]">
+    <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_340px]">
       {editing ? <input type="hidden" name="template_row_id" value={editing.id} /> : null}
       <div className={`card grid content-start gap-5 md:grid-cols-3 ${editing ? "border-gold" : ""}`}>
         <div className="md:col-span-3">
@@ -121,6 +130,11 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
               <p className="hint mt-1">Write the message once; Meta reviews it (usually within minutes) and it then appears below and on Send test.</p>
             </>
           )}
+          {state.error ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {state.error}
+            </p>
+          ) : null}
           {editing?.hasButtons ? (
             <p className="mt-3 rounded-lg bg-gold-soft px-3 py-2 text-sm text-navy">
               This template has buttons, which Orbit can&apos;t edit yet. Saving here would remove them, so edit it in Meta&apos;s WhatsApp Manager instead.
@@ -172,7 +186,7 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
         </div>
         <div>
           <label className="label" htmlFor="language">Language</label>
-          <select className="input disabled:bg-canvas disabled:text-muted" id="language" name="language" defaultValue={editing?.language ?? "en"} disabled={!!editing}>
+          <select className="input disabled:bg-canvas disabled:text-muted" id="language" name="language" value={language} onChange={(e) => setLanguage(e.target.value)} disabled={!!editing}>
             {editing && !["en", "ta"].includes(editing.language) ? <option value={editing.language}>{editing.language}</option> : null}
             <option value="en">English (en)</option>
             <option value="ta">Tamil (ta)</option>
@@ -269,11 +283,18 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
           <input className="input" id="footer" name="footer" maxLength={60} value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="Reply STOP to stop messages" />
         </div>
         <div className="flex items-end">
-          <PendingButton
-            className="btn w-full"
-            label={editing ? "Save and resubmit" : "Submit to Meta"}
-            pendingLabel={editing ? "Saving…" : "Submitting…"}
-          />
+          <button className="btn w-full gap-2" disabled={pending} aria-busy={pending}>
+            {pending ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />
+                {editing ? "Saving…" : "Submitting…"}
+              </>
+            ) : editing ? (
+              "Save and resubmit"
+            ) : (
+              "Submit to Meta"
+            )}
+          </button>
         </div>
       </div>
 

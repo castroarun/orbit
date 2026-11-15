@@ -73,6 +73,9 @@ export function validateTemplate(t: NewTemplate): string[] {
     if (!t.header.text.trim()) errors.push("Heading is empty");
     if (t.header.text.length > 60) errors.push("Heading is over 60 characters");
     if (/\{\{\d+\}\}/.test(t.header.text)) errors.push("Blanks in the heading aren't supported yet");
+    // Meta: no new lines, formatting characters, emojis or asterisks in a text heading.
+    if (/[\n\r*_~`]/.test(t.header.text) || /\p{Extended_Pictographic}/u.test(t.header.text))
+      errors.push("Headings can't have emojis, new lines or formatting characters (* _ ~ `); put emojis in the message text instead");
   }
   if (t.header?.type === "IMAGE" && !t.header.handle) errors.push("Picture upload to Meta failed");
   if (t.footer && t.footer.length > 60) errors.push("Footer is over 60 characters");

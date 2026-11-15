@@ -361,3 +361,12 @@ describe("plain-language Meta errors", () => {
     expect(r.status === "failed" && r.error).toMatch(/allowed list/);
   });
 });
+
+describe("heading rules", () => {
+  const base = { name: "x", language: "en", category: "MARKETING" as const, body: "Hello {{1}} there", examples: ["a"] };
+  it("rejects emojis and formatting in text headings, like Meta does", () => {
+    expect(validateTemplate({ ...base, header: { type: "TEXT", text: "Happy birthday! 🎂" } }).join()).toMatch(/emojis/);
+    expect(validateTemplate({ ...base, header: { type: "TEXT", text: "*Big* sale" } }).join()).toMatch(/formatting/);
+    expect(validateTemplate({ ...base, header: { type: "TEXT", text: "Happy birthday!" } })).toEqual([]);
+  });
+});

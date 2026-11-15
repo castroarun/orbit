@@ -22,7 +22,7 @@ const errorText = (e: unknown) =>
   e instanceof MetaApiError ? friendlyMetaError(e.code, e.message, e.subcode) : e instanceof Error ? e.message : String(e);
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
-const back = (path: string, params: Record<string, string>) => redirect(`${path}?${new URLSearchParams(params)}`);
+const back: (path: string, params: Record<string, string>) => never = (path, params) => redirect(`${path}?${new URLSearchParams(params)}`);
 
 async function requireAgency() {
   const profile = await currentProfile();
@@ -177,10 +177,13 @@ async function templateFromForm(
   return t;
 }
 
-export async function createTemplateAction(form: FormData) {
+/** Errors come back to the form (so nothing typed is lost); success redirects with a notice. */
+export type TemplateFormState = { error?: string };
+
+export async function createTemplateAction(_prev: TemplateFormState, form: FormData): Promise<TemplateFormState> {
   await requireAgency();
   const business = await ensureSandboxBusiness();
-  if (!business.waba_id) back("/templates", { error: "Set META_SANDBOX_WABA_ID first" });
+  if (!business.waba_id) return { error: "Set META_SANDBOX_WABA_ID first" };
   const token = await tokenFor(business);
 
   let name = "";
@@ -207,13 +210,13 @@ export async function createTemplateAction(form: FormData) {
       );
   } catch (e) {
     unstable_rethrow(e);
-    back("/templates", { error: errorText(e) });
+    return { error: errorText(e) };
   }
   revalidatePath("/templates");
   back("/templates", { ok: `Template "${name}" sent to Meta for approval` });
 }
 
-export async function editTemplateAction(form: FormData) {
+export async function editTemplateAction(_prev: TemplateFormState, form: FormData): Promise<TemplateFormState> {
   await requireAgency();
   const business = await ensureSandboxBusiness();
   const token = await tokenFor(business);
@@ -221,9 +224,9 @@ export async function editTemplateAction(form: FormData) {
 
   const db = supabaseAdmin();
   const { data: row } = await db.from("templates").select("*").eq("id", id).eq("business_id", business.id).maybeSingle();
-  if (!row) back("/templates", { error: "Template not found" });
-  if (!EDITABLE_STATUSES.includes(row!.status)) back("/templates", { error: `Meta doesn't allow editing while the template is ${row!.status}` });
-  if (!row!.meta_template_id) back("/templates", { error: "This template has no Meta id; refresh from Meta first" });
+  if (!row) return { error: "Template not found" };
+  if (!EDITABLE_STATUSES.includes(row!.status)) return { error: `Meta doesn't allow editing while the template is ${row!.status}` };
+  if (!row!.meta_template_id) return { error: "This template has no Meta id; refresh from Meta first" };
 
   try {
     const prev = formFromComponents(row!.components, row!.body);
@@ -249,7 +252,7 @@ export async function editTemplateAction(form: FormData) {
       .eq("id", row!.id);
   } catch (e) {
     unstable_rethrow(e);
-    back("/templates", { edit: id, error: errorText(e) });
+    return { error: errorText(e) };
   }
   revalidatePath("/templates");
   back("/templates", { ok: `Changes to "${row!.name}" sent to Meta for review` });
