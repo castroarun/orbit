@@ -25,7 +25,7 @@ export type FetchLike = typeof fetch;
 export async function graphRequest<T>(
   path: string,
   token: string,
-  init: { method?: "GET" | "POST"; body?: unknown; query?: Record<string, string> } = {},
+  init: { method?: "GET" | "POST" | "DELETE"; body?: unknown; query?: Record<string, string> } = {},
   fetchImpl: FetchLike = fetch,
 ): Promise<T> {
   const url = new URL(`${BASE}/${GRAPH_API_VERSION}/${path.replace(/^\//, "")}`);

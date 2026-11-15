@@ -129,3 +129,52 @@ export async function listTemplates(wabaId: string, token: string, fetchImpl?: F
   );
   return res.data ?? [];
 }
+
+/** Statuses Meta lets us edit (not while Pending or Disabled). */
+export const EDITABLE_STATUSES = ["APPROVED", "REJECTED", "PAUSED"];
+
+/** Replace a template's content (Meta re-reviews it; name and language can't change). */
+export async function editTemplate(
+  templateId: string,
+  token: string,
+  t: NewTemplate,
+  opts: { includeCategory: boolean },
+  fetchImpl?: FetchLike,
+) {
+  const { components, category } = buildTemplatePayload(t);
+  return graphRequest<{ success: boolean }>(
+    templateId,
+    token,
+    { method: "POST", body: opts.includeCategory ? { category, components } : { components } },
+    fetchImpl,
+  );
+}
+
+/** Delete one language version of a template (by name + Meta's id). */
+export async function deleteTemplate(wabaId: string, token: string, name: string, templateId: string, fetchImpl?: FetchLike) {
+  return graphRequest<{ success: boolean }>(
+    `${wabaId}/message_templates`,
+    token,
+    { method: "DELETE", query: { name, hsm_id: templateId } },
+    fetchImpl,
+  );
+}
+
+/** Turn stored components back into builder fields, for editing. */
+export function formFromComponents(components: TemplateComponent[] | null | undefined, fallbackBody = "") {
+  const list = components ?? [];
+  const h = list.find((c) => c.type === "HEADER");
+  const b = list.find((c) => c.type === "BODY");
+  const f = list.find((c) => c.type === "FOOTER");
+  const format = (h?.format ?? "TEXT").toUpperCase();
+  return {
+    headerType: !h ? ("NONE" as const) : format === "IMAGE" ? ("IMAGE" as const) : format === "TEXT" ? ("TEXT" as const) : ("NONE" as const),
+    headerText: h && format === "TEXT" ? (h.text ?? "") : "",
+    imageUrl: h && format === "IMAGE" ? (h.orbit_image_url ?? h.example?.header_handle?.[0]) : undefined,
+    imageHandle: h && format === "IMAGE" ? h.example?.header_handle?.[0] : undefined,
+    body: b?.text ?? fallbackBody,
+    examples: b?.example?.body_text?.[0] ?? [],
+    footer: f?.text ?? "",
+    hasButtons: list.some((c) => c.type === "BUTTONS" || c.type === "CAROUSEL"),
+  };
+}

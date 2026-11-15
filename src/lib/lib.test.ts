@@ -313,3 +313,32 @@ describe("template starters", () => {
     }
   });
 });
+
+import { deleteTemplate, editTemplate, formFromComponents } from "./meta/templates";
+
+describe("edit and delete templates", () => {
+  const t = { name: "we_miss_you", language: "en", category: "MARKETING" as const, body: "Hi {{1}}, we miss you!", examples: ["Priya"], footer: "Reply STOP to stop offers" };
+
+  it("edits by template id, without category unless allowed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true })));
+    await editTemplate("TPL1", "tok", t, { includeCategory: false }, fetchMock);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/TPL1$/);
+    const body = JSON.parse(init.body);
+    expect(body.category).toBeUndefined();
+    expect(body.components[0]).toEqual({ type: "BODY", text: "Hi {{1}}, we miss you!", example: { body_text: [["Priya"]] } });
+  });
+
+  it("deletes one language version by name and id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true })));
+    await deleteTemplate("WABA", "tok", "we_miss_you", "TPL1", fetchMock);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("DELETE");
+    expect(String(url)).toMatch(/\/WABA\/message_templates\?name=we_miss_you&hsm_id=TPL1$/);
+  });
+
+  it("reads stored components back into the builder", () => {
+    const f = formFromComponents(componentsToStore({ ...t, header: { type: "IMAGE", handle: "4::h", imageUrl: "https://x/p.jpg" } }));
+    expect(f).toMatchObject({ headerType: "IMAGE", imageUrl: "https://x/p.jpg", imageHandle: "4::h", examples: ["Priya"], footer: "Reply STOP to stop offers", hasButtons: false });
+  });
+});

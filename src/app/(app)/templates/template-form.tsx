@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { templateView } from "@/lib/meta/template-view";
 import type { TemplateComponent } from "@/lib/meta/templates";
 import { STARTERS, type Starter } from "@/lib/template-starters";
-import { createTemplateAction } from "../../actions";
+import Link from "next/link";
+import { createTemplateAction, editTemplateAction } from "../../actions";
 import { PendingButton } from "../pending-button";
 import { WhatsAppBubble } from "../whatsapp-bubble";
 
@@ -13,17 +14,35 @@ const blanksIn = (text: string) => {
   return nums.length ? Math.max(...nums) : 0;
 };
 
-export function TemplateForm() {
+export type EditingTemplate = {
+  id: string;
+  name: string;
+  language: string;
+  category: Starter["category"];
+  status: string;
+  headerType: Starter["headerType"];
+  headerText: string;
+  imageUrl?: string;
+  body: string;
+  examples: string[];
+  footer: string;
+  hasButtons: boolean;
+};
+
+export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
   const first = STARTERS[0];
+  const init = editing ?? { ...first, headerText: first.headerText ?? "", footer: first.footer ?? "", imageUrl: undefined };
   const [starterId, setStarterId] = useState(first.id);
-  const [name, setName] = useState(first.name);
-  const [category, setCategory] = useState<Starter["category"]>(first.category);
-  const [headerType, setHeaderType] = useState<Starter["headerType"]>(first.headerType);
-  const [headerText, setHeaderText] = useState(first.headerText ?? "");
-  const [imageUrl, setImageUrl] = useState<string>();
-  const [body, setBody] = useState(first.body);
-  const [examples, setExamples] = useState<string[]>(first.examples);
-  const [footer, setFooter] = useState(first.footer ?? "");
+  const [name, setName] = useState(init.name);
+  const [category, setCategory] = useState<Starter["category"]>(init.category);
+  const [headerType, setHeaderType] = useState<Starter["headerType"]>(init.headerType);
+  const [headerText, setHeaderText] = useState(init.headerText);
+  const [imageUrl, setImageUrl] = useState<string | undefined>(init.imageUrl);
+  const [pickedNew, setPickedNew] = useState(false);
+  const [body, setBody] = useState(init.body);
+  const [examples, setExamples] = useState<string[]>(init.examples);
+  const [footer, setFooter] = useState(init.footer);
+  const categoryLocked = editing?.status === "APPROVED";
 
   const starter = STARTERS.find((x) => x.id === starterId) ?? first;
   const applyStarter = (id: string) => {
@@ -41,7 +60,7 @@ export function TemplateForm() {
   const groups = [...new Set(STARTERS.map((x) => x.group))];
 
   // Free the local preview of a picked picture when it changes.
-  useEffect(() => () => (imageUrl ? URL.revokeObjectURL(imageUrl) : undefined), [imageUrl]);
+  useEffect(() => () => (imageUrl && pickedNew ? URL.revokeObjectURL(imageUrl) : undefined), [imageUrl, pickedNew]);
 
   const blanks = blanksIn(body);
   const exampleValues = Array.from({ length: blanks }, (_, i) => examples[i] ?? "");
@@ -56,13 +75,40 @@ export function TemplateForm() {
   }, [headerType, headerText, body, footer]);
 
   return (
-    <form action={createTemplateAction} className="grid gap-6 lg:grid-cols-[1fr_340px]">
-      <div className="card grid content-start gap-5 md:grid-cols-3">
+    <form action={editing ? editTemplateAction : createTemplateAction} className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      {editing ? <input type="hidden" name="template_row_id" value={editing.id} /> : null}
+      <div className={`card grid content-start gap-5 md:grid-cols-3 ${editing ? "border-gold" : ""}`}>
         <div className="md:col-span-3">
-          <h2 className="text-lg font-semibold text-navy">Create a new template</h2>
-          <p className="hint mt-1">Write the message once; Meta reviews it (usually within minutes) and it then appears below and on Send test.</p>
+          {editing ? (
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-navy">
+                  Edit {editing.name} <span className="text-muted">· {editing.language}</span>
+                </h2>
+                <p className="hint mt-1">
+                  Saving sends it back to Meta for review; it can&apos;t be sent until approved again. Name and language can&apos;t change
+                  {categoryLocked ? ", and neither can the category of an approved template" : ""}.
+                  {editing.status === "APPROVED" ? " Meta allows one edit a day (10 a month) on approved templates." : ""}
+                </p>
+              </div>
+              <Link href="/templates" className="text-sm text-muted hover:text-navy">
+                Cancel
+              </Link>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-navy">Create a new template</h2>
+              <p className="hint mt-1">Write the message once; Meta reviews it (usually within minutes) and it then appears below and on Send test.</p>
+            </>
+          )}
+          {editing?.hasButtons ? (
+            <p className="mt-3 rounded-lg bg-gold-soft px-3 py-2 text-sm text-navy">
+              This template has buttons, which Orbit can&apos;t edit yet. Saving here would remove them, so edit it in Meta&apos;s WhatsApp Manager instead.
+            </p>
+          ) : null}
         </div>
 
+        {editing ? null : (
         <div className="md:col-span-3 rounded-xl bg-navy-soft/60 p-4">
           <label className="label" htmlFor="starter">Start from</label>
           <select className="input bg-white" id="starter" value={starterId} onChange={(e) => applyStarter(e.target.value)}>
@@ -78,22 +124,24 @@ export function TemplateForm() {
           </select>
           <p className="hint mt-1">{starter.hint} Everything below can be edited.</p>
         </div>
+        )}
 
         <div>
           <label className="label" htmlFor="name">Name</label>
-          <input className="input" id="name" name="name" placeholder="visit_checkin" required value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input disabled:bg-canvas disabled:text-muted" id="name" name="name" placeholder="visit_checkin" required value={name} disabled={!!editing} onChange={(e) => setName(e.target.value)} />
           <p className="hint mt-1">Only you see this. Lowercase, use _ for spaces.</p>
         </div>
         <div>
           <label className="label" htmlFor="language">Language</label>
-          <select className="input" id="language" name="language" defaultValue="en">
+          <select className="input disabled:bg-canvas disabled:text-muted" id="language" name="language" defaultValue={editing?.language ?? "en"} disabled={!!editing}>
+            {editing && !["en", "ta"].includes(editing.language) ? <option value={editing.language}>{editing.language}</option> : null}
             <option value="en">English (en)</option>
             <option value="ta">Tamil (ta)</option>
           </select>
         </div>
         <div>
           <label className="label" htmlFor="category">Category</label>
-          <select className="input" id="category" name="category" value={category} onChange={(e) => setCategory(e.target.value as Starter["category"])}>
+          <select className="input disabled:bg-canvas disabled:text-muted" id="category" name="category" value={category} disabled={categoryLocked} onChange={(e) => setCategory(e.target.value as Starter["category"])}>
             <option value="UTILITY">Utility (about a visit or order)</option>
             <option value="MARKETING">Marketing (offers, greetings)</option>
           </select>
@@ -131,13 +179,16 @@ export function TemplateForm() {
                 name="header_image"
                 type="file"
                 accept="image/jpeg,image/png"
-                required
+                required={!editing?.imageUrl}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  setImageUrl(f ? URL.createObjectURL(f) : undefined);
+                  setPickedNew(!!f);
+                  setImageUrl(f ? URL.createObjectURL(f) : editing?.imageUrl);
                 }}
               />
-              <p className="hint mt-1">JPG or PNG, under 4 MB. Meta reviews with this picture; you can send a different one each time.</p>
+              <p className="hint mt-1">
+                {editing?.imageUrl ? "Leave empty to keep the current picture. " : ""}JPG or PNG, under 4 MB. Meta reviews with this picture; you can send a different one each time.
+              </p>
             </>
           ) : (
             <p className="hint pt-7">Optional: a bold line or a picture above the message.</p>
@@ -177,7 +228,11 @@ export function TemplateForm() {
           <input className="input" id="footer" name="footer" maxLength={60} value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="Reply STOP to stop messages" />
         </div>
         <div className="flex items-end">
-          <PendingButton className="btn w-full" label="Submit to Meta" pendingLabel="Submitting…" />
+          <PendingButton
+            className="btn w-full"
+            label={editing ? "Save and resubmit" : "Submit to Meta"}
+            pendingLabel={editing ? "Saving…" : "Submitting…"}
+          />
         </div>
       </div>
 

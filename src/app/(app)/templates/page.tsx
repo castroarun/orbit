@@ -1,6 +1,9 @@
 import { loadSandbox } from "@/lib/page-data";
 import { syncTemplates } from "../../actions";
-import { TemplateForm } from "./template-form";
+import Link from "next/link";
+import { EDITABLE_STATUSES, formFromComponents } from "@/lib/meta/templates";
+import { DeleteTemplateButton } from "./delete-button";
+import { TemplateForm, type EditingTemplate } from "./template-form";
 import { Notice, param } from "../notice";
 import { PendingButton } from "../pending-button";
 
@@ -15,9 +18,30 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
   const { business, supabase } = await loadSandbox();
   const { data: templates } = await supabase
     .from("templates")
-    .select("name, language, category, status, body, rejection_reason, updated_at")
+    .select("id, name, language, category, status, body, components, rejection_reason, updated_at")
     .eq("business_id", business.id)
     .order("updated_at", { ascending: false });
+
+  const editId = param(sp.edit);
+  const row = editId ? templates?.find((t) => t.id === editId) : undefined;
+  let editing: EditingTemplate | undefined;
+  if (row && EDITABLE_STATUSES.includes(row.status)) {
+    const f = formFromComponents(row.components, row.body);
+    editing = {
+      id: row.id,
+      name: row.name,
+      language: row.language,
+      category: row.category,
+      status: row.status,
+      headerType: f.headerType,
+      headerText: f.headerText,
+      imageUrl: f.imageUrl,
+      body: f.body,
+      examples: f.examples,
+      footer: f.footer,
+      hasButtons: f.hasButtons,
+    };
+  }
 
   return (
     <div className="space-y-6">
@@ -33,7 +57,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
 
       <Notice ok={param(sp.ok)} error={param(sp.error)} />
 
-      <TemplateForm />
+      <TemplateForm key={editing?.id ?? "new"} editing={editing} />
 
       <h2 className="pt-2 text-lg font-semibold text-navy">Your templates</h2>
       <div className="card p-0">
@@ -43,6 +67,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
               <th className="px-6 py-3 font-medium">Template</th>
               <th className="px-6 py-3 font-medium">Category</th>
               <th className="px-6 py-3 font-medium">Status</th>
+              <th className="px-6 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
@@ -59,11 +84,23 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
                   <span className={`rounded-full px-3 py-1 text-xs font-medium ${badge[t.status] ?? "bg-navy-soft text-navy"}`}>{t.status}</span>
                   {t.rejection_reason ? <div className="hint mt-1">{t.rejection_reason}</div> : null}
                 </td>
+                <td className="whitespace-nowrap px-6 py-4 text-right">
+                  {EDITABLE_STATUSES.includes(t.status) ? (
+                    <Link href={`/templates?edit=${t.id}`} className="mr-4 text-sm font-medium text-navy hover:underline">
+                      Edit
+                    </Link>
+                  ) : (
+                    <span className="mr-4 text-xs text-muted" title="Meta doesn't allow edits while a template is in review">
+                      Edit after review
+                    </span>
+                  )}
+                  <DeleteTemplateButton id={t.id} name={t.name} />
+                </td>
               </tr>
             ))}
             {!templates?.length ? (
               <tr>
-                <td colSpan={3} className="px-6 py-8 text-center text-muted">
+                <td colSpan={4} className="px-6 py-8 text-center text-muted">
                   No templates yet. Create one above, or refresh to pull Meta&apos;s samples.
                 </td>
               </tr>

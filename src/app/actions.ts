@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { componentsToStore, countPlaceholders, createTemplate, listTemplates, toTemplateName, validateTemplate, type NewTemplate, type TemplateCategory } from "@/lib/meta/templates";
+import { componentsToStore, countPlaceholders, createTemplate, deleteTemplate, EDITABLE_STATUSES, editTemplate, formFromComponents, listTemplates, toTemplateName, validateTemplate, type NewTemplate, type TemplateCategory, type TemplateComponent } from "@/lib/meta/templates";
 import { uploadSampleToMeta } from "@/lib/meta/upload";
 import { checkImage, storePublicImage } from "@/lib/storage";
 import { env } from "@/lib/env";
@@ -124,44 +124,62 @@ export async function sendTest(form: FormData) {
 
 // ───────── templates (App Review video 2) ─────────
 
+/** Reads the builder form into a template; uploads a new picture if one was chosen. */
+async function templateFromForm(
+  form: FormData,
+  business: { id: string },
+  token: string,
+  keep?: { name: string; language: string; category: TemplateCategory; imageHandle?: string; imageUrl?: string },
+): Promise<NewTemplate> {
+  const body = str(form, "body");
+  const blanks = countPlaceholders(body);
+  const t: NewTemplate = {
+    name: keep?.name ?? toTemplateName(str(form, "name")),
+    language: keep?.language ?? (str(form, "language") || "en"),
+    category: keep?.category ?? ((str(form, "category") || "UTILITY") as TemplateCategory),
+    body,
+    examples: Array.from({ length: blanks }, (_, i) => str(form, `example_${i + 1}`)),
+    footer: str(form, "footer") || undefined,
+  };
+
+  const headerType = str(form, "header_type");
+  if (headerType === "TEXT") t.header = { type: "TEXT", text: str(form, "header_text") };
+  if (headerType === "IMAGE") {
+    const file = form.get("header_image") as File | null;
+    if (file && file.size > 0) {
+      const problem = checkImage(file);
+      if (problem) throw new Error(problem);
+      const imageUrl = await storePublicImage(business.id, file);
+      const handle = await uploadSampleToMeta({
+        appId: env.metaAppId(),
+        token,
+        bytes: await file.arrayBuffer(),
+        fileType: file.type,
+        fileName: file.name || "sample.jpg",
+      });
+      t.header = { type: "IMAGE", handle, imageUrl };
+    } else if (keep?.imageHandle) {
+      t.header = { type: "IMAGE", handle: keep.imageHandle, imageUrl: keep.imageUrl ?? "" };
+    } else {
+      throw new Error("Choose a picture");
+    }
+  }
+
+  const errors = validateTemplate(t);
+  if (errors.length) throw new Error(errors.join(". "));
+  return t;
+}
+
 export async function createTemplateAction(form: FormData) {
   await requireAgency();
   const business = await ensureSandboxBusiness();
   if (!business.waba_id) back("/templates", { error: "Set META_SANDBOX_WABA_ID first" });
   const token = await tokenFor(business);
 
-  const body = str(form, "body");
-  const blanks = countPlaceholders(body);
-  const t: NewTemplate = {
-    name: toTemplateName(str(form, "name")),
-    language: str(form, "language") || "en",
-    category: (str(form, "category") || "UTILITY") as TemplateCategory,
-    body,
-    examples: Array.from({ length: blanks }, (_, i) => str(form, `example_${i + 1}`)),
-    footer: str(form, "footer") || undefined,
-  };
-
+  let name = "";
   try {
-    const headerType = str(form, "header_type");
-    if (headerType === "TEXT") t.header = { type: "TEXT", text: str(form, "header_text") };
-    if (headerType === "IMAGE") {
-      const file = form.get("header_image") as File | null;
-      const problem = checkImage(file);
-      if (problem) back("/templates", { error: problem });
-      const imageUrl = await storePublicImage(business.id, file!);
-      const handle = await uploadSampleToMeta({
-        appId: env.metaAppId(),
-        token,
-        bytes: await file!.arrayBuffer(),
-        fileType: file!.type,
-        fileName: file!.name || "sample.jpg",
-      });
-      t.header = { type: "IMAGE", handle, imageUrl };
-    }
-
-    const errors = validateTemplate(t);
-    if (errors.length) back("/templates", { error: errors.join(". ") });
-
+    const t = await templateFromForm(form, business, token);
+    name = t.name;
     const res = await createTemplate(business.waba_id!, token, t);
     await supabaseAdmin()
       .from("templates")
@@ -175,6 +193,7 @@ export async function createTemplateAction(form: FormData) {
           components: componentsToStore(t),
           meta_template_id: res.id,
           status: res.status,
+          rejection_reason: null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "business_id,name,language" },
@@ -184,7 +203,70 @@ export async function createTemplateAction(form: FormData) {
     back("/templates", { error: e instanceof Error ? e.message : String(e) });
   }
   revalidatePath("/templates");
-  back("/templates", { ok: `Template "${t.name}" sent to Meta for approval` });
+  back("/templates", { ok: `Template "${name}" sent to Meta for approval` });
+}
+
+export async function editTemplateAction(form: FormData) {
+  await requireAgency();
+  const business = await ensureSandboxBusiness();
+  const token = await tokenFor(business);
+  const id = str(form, "template_row_id");
+
+  const db = supabaseAdmin();
+  const { data: row } = await db.from("templates").select("*").eq("id", id).eq("business_id", business.id).maybeSingle();
+  if (!row) back("/templates", { error: "Template not found" });
+  if (!EDITABLE_STATUSES.includes(row!.status)) back("/templates", { error: `Meta doesn't allow editing while the template is ${row!.status}` });
+  if (!row!.meta_template_id) back("/templates", { error: "This template has no Meta id; refresh from Meta first" });
+
+  try {
+    const prev = formFromComponents(row!.components, row!.body);
+    const categoryLocked = row!.status === "APPROVED";
+    const t = await templateFromForm(form, business, token, {
+      name: row!.name,
+      language: row!.language,
+      category: categoryLocked ? row!.category : ((str(form, "category") || row!.category) as TemplateCategory),
+      imageHandle: prev.imageHandle,
+      imageUrl: prev.imageUrl,
+    });
+    await editTemplate(row!.meta_template_id, token, t, { includeCategory: !categoryLocked });
+    await db
+      .from("templates")
+      .update({
+        category: t.category,
+        body: t.body,
+        components: componentsToStore(t),
+        status: "PENDING",
+        rejection_reason: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row!.id);
+  } catch (e) {
+    unstable_rethrow(e);
+    back("/templates", { edit: id, error: e instanceof Error ? e.message : String(e) });
+  }
+  revalidatePath("/templates");
+  back("/templates", { ok: `Changes to "${row!.name}" sent to Meta for review` });
+}
+
+export async function deleteTemplateAction(form: FormData) {
+  await requireAgency();
+  const business = await ensureSandboxBusiness();
+  const id = str(form, "template_row_id");
+  const db = supabaseAdmin();
+  const { data: row } = await db.from("templates").select("*").eq("id", id).eq("business_id", business.id).maybeSingle();
+  if (!row) back("/templates", { error: "Template not found" });
+
+  try {
+    if (row!.meta_template_id && business.waba_id) {
+      await deleteTemplate(business.waba_id, await tokenFor(business), row!.name, row!.meta_template_id);
+    }
+    await db.from("templates").delete().eq("id", row!.id);
+  } catch (e) {
+    unstable_rethrow(e);
+    back("/templates", { error: e instanceof Error ? e.message : String(e) });
+  }
+  revalidatePath("/templates");
+  back("/templates", { ok: `Deleted "${row!.name}" (${row!.language}). That name can't be reused for 30 days.` });
 }
 
 /** Pull the current list (and approval status) from Meta. */
@@ -207,6 +289,13 @@ export async function syncTemplates() {
       rejection_reason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : null,
       updated_at: new Date().toISOString(),
     }));
+    // Keep Orbit's own copy of picture headings, which Meta doesn't return.
+    const { data: existing } = await supabaseAdmin().from("templates").select("name, language, components").eq("business_id", business.id);
+    for (const r of rows) {
+      const old = existing?.find((e) => e.name === r.name && e.language === r.language);
+      const ours = (old?.components as TemplateComponent[] | null)?.find((c) => c.type === "HEADER")?.orbit_image_url;
+      if (ours && r.components) r.components = r.components.map((c) => (c.type === "HEADER" ? { ...c, orbit_image_url: ours } : c));
+    }
     if (rows.length) await supabaseAdmin().from("templates").upsert(rows, { onConflict: "business_id,name,language" });
   } catch (e) {
     back("/templates", { error: e instanceof Error ? e.message : String(e) });
