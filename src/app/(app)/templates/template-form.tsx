@@ -56,8 +56,28 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
     setBody(x.body);
     setExamples(x.examples);
     setFooter(x.footer ?? "");
+    setKeptNote(false);
   };
-  const groups = [...new Set(STARTERS.map((x) => x.group))];
+  // Structures that fit the chosen category (Blank fits both).
+  const fits = (x: Starter) => x.id === "blank" || x.category === category;
+  const groups = [...new Set(STARTERS.filter(fits).map((x) => x.group))];
+  const [keptNote, setKeptNote] = useState(false);
+
+  /** Changing category loads that category's first structure, unless the text was already edited. */
+  const changeCategory = (c: Starter["category"]) => {
+    setCategory(c);
+    if (editing) return;
+    const untouched = body === starter.body || body.trim() === "";
+    if (untouched) {
+      const next = STARTERS.find((x) => x.category === c && x.id !== "blank");
+      if (next) {
+        applyStarter(next.id);
+        setKeptNote(false);
+        return;
+      }
+    }
+    setKeptNote(true);
+  };
 
   // Free the local preview of a picked picture when it changes.
   useEffect(() => () => (imageUrl && pickedNew ? URL.revokeObjectURL(imageUrl) : undefined), [imageUrl, pickedNew]);
@@ -114,7 +134,7 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
           <select className="input bg-white" id="starter" value={starterId} onChange={(e) => applyStarter(e.target.value)}>
             {groups.map((g) => (
               <optgroup key={g} label={g}>
-                {STARTERS.filter((x) => x.group === g).map((x) => (
+                {STARTERS.filter((x) => x.group === g && fits(x)).map((x) => (
                   <option key={x.id} value={x.id}>
                     {x.label}
                   </option>
@@ -123,6 +143,11 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
             ))}
           </select>
           <p className="hint mt-1">{starter.hint} Everything below can be edited.</p>
+          {keptNote ? (
+            <p className="mt-2 text-xs text-navy">
+              Your edited text was kept. Pick a {category === "MARKETING" ? "Marketing" : "Utility"} structure here to replace it.
+            </p>
+          ) : null}
         </div>
         )}
 
@@ -141,7 +166,7 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
         </div>
         <div>
           <label className="label" htmlFor="category">Category</label>
-          <select className="input disabled:bg-canvas disabled:text-muted" id="category" name="category" value={category} disabled={categoryLocked} onChange={(e) => setCategory(e.target.value as Starter["category"])}>
+          <select className="input disabled:bg-canvas disabled:text-muted" id="category" name="category" value={category} disabled={categoryLocked} onChange={(e) => changeCategory(e.target.value as Starter["category"])}>
             <option value="UTILITY">Utility (about a visit or order)</option>
             <option value="MARKETING">Marketing (offers, greetings)</option>
           </select>
