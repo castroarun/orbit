@@ -7,7 +7,7 @@ import { SendForm, type TemplateOption } from "./send-form";
 export default async function SendTestPage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
   const { business, supabase } = await loadSandbox();
-  await syncIfPending(business);
+  const syncProblem = await syncIfPending(business);
   const { data: templates } = await supabase
     .from("templates")
     .select("name, language, category, status, body, components")
@@ -27,6 +27,12 @@ export default async function SendTestPage({ searchParams }: PageProps<"/">) {
           </Link>
         </p>
       </div>
+
+      {syncProblem ? (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+          Couldn&apos;t check template status with Meta, so statuses below may be out of date. {syncProblem}
+        </div>
+      ) : null}
 
       <Notice ok={param(sp.ok)} error={param(sp.error)} link={param(sp.link)} />
 

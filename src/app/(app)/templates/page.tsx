@@ -20,7 +20,7 @@ const badge: Record<string, string> = {
 export default async function TemplatesPage({ searchParams }: PageProps<"/templates">) {
   const sp = await searchParams;
   const { business, supabase } = await loadSandbox();
-  await syncIfPending(business);
+  const syncProblem = await syncIfPending(business);
   const { data: templates } = await supabase
     .from("templates")
     .select("id, name, language, category, status, body, components, rejection_reason, updated_at")
@@ -59,6 +59,12 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
           <PendingButton className="btn-gold" label="Refresh from Meta" pendingLabel="Refreshing…" />
         </form>
       </div>
+
+      {syncProblem ? (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+          Couldn&apos;t check template status with Meta, so statuses below may be out of date. {syncProblem}
+        </div>
+      ) : null}
 
       <Notice ok={param(sp.ok)} error={param(sp.error)} />
 
@@ -107,7 +113,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
                 <td className="px-6 py-4">{t.category}</td>
                 <td className="px-6 py-4">
                   <span className={`rounded-full px-3 py-1 text-xs font-medium ${badge[t.status] ?? "bg-navy-soft text-navy"}`}>{t.status}</span>
-                  {t.status === "PENDING" ? <div className="hint mt-1">Checked with Meta each time you open this page</div> : null}
+                  {t.status === "PENDING" && !syncProblem ? <div className="hint mt-1">Checked with Meta each time you open this page</div> : null}
                   {t.rejection_reason ? <div className="hint mt-1">{t.rejection_reason}</div> : null}
                 </td>
                 <td className="whitespace-nowrap px-6 py-4 text-right">

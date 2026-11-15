@@ -1,4 +1,6 @@
 import "server-only";
+import { friendlyMetaError } from "./meta/errors";
+import { MetaApiError } from "./meta/graph";
 import { listTemplates, type TemplateComponent } from "./meta/templates";
 import { tokenFor } from "./sandbox";
 import { supabaseAdmin } from "./supabase/server";
@@ -49,16 +51,18 @@ export async function syncTemplatesFromMeta(business: { id: string; waba_id: str
 }
 
 /** On page load: only call Meta when something is still waiting for review. */
-export async function syncIfPending(business: { id: string; waba_id: string | null; is_sandbox: boolean }) {
+export async function syncIfPending(business: { id: string; waba_id: string | null; is_sandbox: boolean }): Promise<string | null> {
   const { count } = await supabaseAdmin()
     .from("templates")
     .select("id", { count: "exact", head: true })
     .eq("business_id", business.id)
     .in("status", ["PENDING", "IN_APPEAL", "PENDING_DELETION"]);
-  if (!count) return;
+  if (!count) return null;
   try {
     await syncTemplatesFromMeta(business);
-  } catch {
-    // A failed background check shouldn't break the page; the Refresh button shows the error.
+    return null;
+  } catch (e) {
+    // Don't break the page, but say so: otherwise "Pending" may just be stale.
+    return e instanceof MetaApiError ? friendlyMetaError(e.code, e.message, e.subcode) : e instanceof Error ? e.message : String(e);
   }
 }
