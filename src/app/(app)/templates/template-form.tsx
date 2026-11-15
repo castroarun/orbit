@@ -129,25 +129,39 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
         </div>
 
         {editing ? null : (
-        <div className="md:col-span-3 rounded-xl bg-navy-soft/60 p-4">
-          <label className="label" htmlFor="starter">Start from</label>
-          <select className="input bg-white" id="starter" value={starterId} onChange={(e) => applyStarter(e.target.value)}>
-            {groups.map((g) => (
-              <optgroup key={g} label={g}>
-                {STARTERS.filter((x) => x.group === g && fits(x)).map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <p className="hint mt-1">{starter.hint} Everything below can be edited.</p>
-          {keptNote ? (
-            <p className="mt-2 text-xs text-navy">
-              Your edited text was kept. Pick a {category === "MARKETING" ? "Marketing" : "Utility"} structure here to replace it.
+        <div className="md:col-span-3 grid gap-4 rounded-xl bg-navy-soft/60 p-4 md:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="category">1. Type of message</label>
+            <select className="input bg-white" id="category" name="category" value={category} onChange={(e) => changeCategory(e.target.value as Starter["category"])}>
+              <option value="UTILITY">Utility: about a visit or order</option>
+              <option value="MARKETING">Marketing: offers and greetings</option>
+            </select>
+            <p className="hint mt-1">
+              {category === "MARKETING"
+                ? "≈ ₹0.86 per message. Anything promotional must be Marketing."
+                : "≈ ₹0.12 per message. Only for a specific visit or order, nothing promotional."}
             </p>
-          ) : null}
+          </div>
+          <div>
+            <label className="label" htmlFor="starter">2. Start from</label>
+            <select className="input bg-white" id="starter" value={starterId} onChange={(e) => applyStarter(e.target.value)}>
+              {groups.map((g) => (
+                <optgroup key={g} label={g}>
+                  {STARTERS.filter((x) => x.group === g && fits(x)).map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <p className="hint mt-1">{starter.hint} Everything below can be edited.</p>
+            {keptNote ? (
+              <p className="mt-2 text-xs text-navy">
+                Your edited text was kept. Pick a {category === "MARKETING" ? "Marketing" : "Utility"} structure here to replace it.
+              </p>
+            ) : null}
+          </div>
         </div>
         )}
 
@@ -164,16 +178,18 @@ export function TemplateForm({ editing }: { editing?: EditingTemplate }) {
             <option value="ta">Tamil (ta)</option>
           </select>
         </div>
-        <div>
-          <label className="label" htmlFor="category">Category</label>
-          <select className="input disabled:bg-canvas disabled:text-muted" id="category" name="category" value={category} disabled={categoryLocked} onChange={(e) => changeCategory(e.target.value as Starter["category"])}>
-            <option value="UTILITY">Utility (about a visit or order)</option>
-            <option value="MARKETING">Marketing (offers, greetings)</option>
-          </select>
-          <p className="hint mt-1">
-            {category === "MARKETING" ? "≈ ₹0.86 per message. Offers and greetings must be Marketing." : "≈ ₹0.12 per message. Only for messages about a specific visit or order."}
-          </p>
-        </div>
+
+        {editing ? (
+          <div>
+            <label className="label" htmlFor="category_edit">Type of message</label>
+            <select className="input disabled:bg-canvas disabled:text-muted" id="category_edit" name="category" value={category} disabled={categoryLocked} onChange={(e) => setCategory(e.target.value as Starter["category"])}>
+              <option value="UTILITY">Utility: about a visit or order</option>
+              <option value="MARKETING">Marketing: offers and greetings</option>
+            </select>
+          </div>
+        ) : (
+          <div />
+        )}
 
         <div>
           <label className="label" htmlFor="header_type">Heading</label>
