@@ -206,3 +206,39 @@ describe("templates", () => {
     });
   });
 });
+
+import { fillBlanks, templateView } from "./meta/template-view";
+
+describe("template preview", () => {
+  const orderConfirmation = [
+    { type: "HEADER", format: "TEXT", text: "Order confirmed" },
+    { type: "BODY", text: "Hi {{1}}, your order number is {{2}}. Delivery: {{3}}." },
+    { type: "FOOTER", text: "Jasper's Market" },
+    { type: "BUTTONS", buttons: [{ type: "URL", text: "Visit order details", url: "https://example.com/orders" }] },
+  ];
+
+  it("reads heading, text, footer, buttons and blanks", () => {
+    const v = templateView(orderConfirmation);
+    expect(v.header).toEqual({ kind: "text", text: "Order confirmed" });
+    expect(v.footer).toBe("Jasper's Market");
+    expect(v.buttons).toEqual([{ type: "URL", text: "Visit order details", url: "https://example.com/orders" }]);
+    expect(v.blanks).toBe(3);
+    expect(v.sendable).toBe(true);
+  });
+
+  it("flags templates the simple sender can't fill", () => {
+    expect(templateView([{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Hi" }]).sendable).toBe(false);
+    expect(templateView([{ type: "BODY", text: "x" }, { type: "CAROUSEL" }]).sendable).toBe(false);
+    expect(
+      templateView([{ type: "BODY", text: "x" }, { type: "BUTTONS", buttons: [{ type: "URL", text: "Go", url: "https://a.com/{{1}}" }] }]).sendable,
+    ).toBe(false);
+  });
+
+  it("falls back to stored body text when components are missing", () => {
+    expect(templateView(null, "Hello {{1}}").blanks).toBe(1);
+  });
+
+  it("fills blanks live and keeps empty ones visible", () => {
+    expect(fillBlanks("Hi {{1}}, order {{2}}", ["Priya"])).toBe("Hi Priya, order {{2}}");
+  });
+});

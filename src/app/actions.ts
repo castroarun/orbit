@@ -3,8 +3,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { fillTemplate, createTemplate, listTemplates, toTemplateName, validateTemplate, type TemplateCategory } from "@/lib/meta/templates";
+import { buildTemplatePayload, createTemplate, listTemplates, toTemplateName, validateTemplate, type TemplateCategory } from "@/lib/meta/templates";
 import { normalizePhone } from "@/lib/phone";
+import { fillBlanks, templateView } from "@/lib/meta/template-view";
 import { ensureSandboxBusiness, tokenFor } from "@/lib/sandbox";
 import { sendMessage } from "@/lib/send";
 import { currentProfile, supabaseAdmin, supabaseForUser } from "@/lib/supabase/server";
@@ -64,21 +65,36 @@ export async function sendTest(form: FormData) {
     message = { kind: "text", to, text: str(form, "text") || "Hello from Orbit" };
   } else {
     const [name, language] = (str(form, "template") || "hello_world|en_US").split("|");
-    const params = str(form, "params").split("|").map((s) => s.trim()).filter(Boolean);
     const { data: t } = await supabaseAdmin()
       .from("templates")
-      .select("body")
+      .select("body, components")
       .eq("business_id", business.id)
       .eq("name", name)
       .eq("language", language)
       .maybeSingle();
+    const view = templateView(t?.components, t?.body ?? "");
+    if (!view.sendable) back("/", { error: view.reason ?? "This template can't be sent from here yet" });
+
+    // One box per {{n}} blank: param_1, param_2, …
+    const params = Array.from({ length: view.blanks }, (_, i) => str(form, `param_${i + 1}`));
+    const missing = params.findIndex((p) => !p);
+    if (missing >= 0) back("/", { error: `Fill in {{${missing + 1}}} before sending` });
+
+    const preview = [
+      view.header?.kind === "text" ? view.header.text : "",
+      fillBlanks(view.body, params),
+      view.footer ?? "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
     message = {
       kind: "template",
       to,
       templateName: name,
       language,
       bodyParams: params,
-      previewText: t?.body ? fillTemplate(t.body, params) : name === "hello_world" ? "Hello World" : name,
+      previewText: preview || name,
     };
   }
 
@@ -117,6 +133,7 @@ export async function createTemplateAction(form: FormData) {
           language: t.language,
           category: res.category ?? t.category,
           body: t.body,
+          components: buildTemplatePayload(t).components,
           meta_template_id: res.id,
           status: res.status,
           updated_at: new Date().toISOString(),
@@ -144,6 +161,7 @@ export async function syncTemplates() {
       language: t.language,
       category: t.category === "MARKETING" ? "MARKETING" : "UTILITY",
       body: t.components?.find((c) => c.type === "BODY")?.text ?? "",
+      components: t.components ?? null,
       meta_template_id: t.id,
       status: t.status,
       rejection_reason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : null,

@@ -23,7 +23,15 @@ export type MetaTemplate = {
   status: string;
   category: string;
   rejected_reason?: string;
-  components?: { type: string; text?: string }[];
+  components?: TemplateComponent[];
+};
+
+/** A template part as Meta returns it (header, body, footer, buttons, carousel). */
+export type TemplateComponent = {
+  type: string; // HEADER | BODY | FOOTER | BUTTONS | CAROUSEL
+  format?: string; // HEADER: TEXT | IMAGE | VIDEO | DOCUMENT | LOCATION
+  text?: string;
+  buttons?: { type: string; text?: string; url?: string; phone_number?: string }[];
 };
 
 /** Meta's rule: lowercase letters, digits and underscores only. */
