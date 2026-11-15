@@ -227,7 +227,7 @@ describe("template preview", () => {
   });
 
   it("flags templates the simple sender can't fill", () => {
-    expect(templateView([{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Hi" }]).sendable).toBe(false);
+    expect(templateView([{ type: "HEADER", format: "DOCUMENT" }, { type: "BODY", text: "Hi" }]).sendable).toBe(false);
     expect(templateView([{ type: "BODY", text: "x" }, { type: "CAROUSEL" }]).sendable).toBe(false);
     expect(
       templateView([{ type: "BODY", text: "x" }, { type: "BUTTONS", buttons: [{ type: "URL", text: "Go", url: "https://a.com/{{1}}" }] }]).sendable,
@@ -240,5 +240,55 @@ describe("template preview", () => {
 
   it("fills blanks live and keeps empty ones visible", () => {
     expect(fillBlanks("Hi {{1}}, order {{2}}", ["Priya"])).toBe("Hi Priya, order {{2}}");
+  });
+});
+
+import { componentsToStore } from "./meta/templates";
+import { uploadSampleToMeta } from "./meta/upload";
+
+describe("picture templates", () => {
+  const base = { name: "festival_offer", language: "en", category: "MARKETING" as const, body: "Hi {{1}}, our Pongal offer is here!", examples: ["Priya"] };
+
+  it("builds an image heading for Meta and keeps our own copy for previews", () => {
+    const t = { ...base, header: { type: "IMAGE" as const, handle: "4::abc", imageUrl: "https://x/p.jpg" }, footer: "AS Groups" };
+    expect(buildTemplatePayload(t).components[0]).toEqual({ type: "HEADER", format: "IMAGE", example: { header_handle: ["4::abc"] } });
+    expect(componentsToStore(t)[0]).toMatchObject({ format: "IMAGE", orbit_image_url: "https://x/p.jpg" });
+    expect(buildTemplatePayload(t).components.at(-1)).toEqual({ type: "FOOTER", text: "AS Groups" });
+  });
+
+  it("validates headings and footers", () => {
+    expect(validateTemplate({ ...base, header: { type: "TEXT", text: "x".repeat(61) } }).join()).toContain("Heading is over 60");
+    expect(validateTemplate({ ...base, footer: "y".repeat(61) }).join()).toContain("Footer is over 60");
+  });
+
+  it("previews and allows sending picture templates", () => {
+    const v = templateView(componentsToStore({ ...base, header: { type: "IMAGE", handle: "h", imageUrl: "https://x/p.jpg" } }));
+    expect(v.header).toEqual({ kind: "media", format: "IMAGE", sampleUrl: "https://x/p.jpg" });
+    expect(v.sendable).toBe(true);
+    expect(templateView([{ type: "HEADER", format: "VIDEO" }, { type: "BODY", text: "x" }]).sendable).toBe(false);
+  });
+
+  it("sends the picture as a header parameter", () => {
+    const p = buildMetaPayload({ kind: "template", to: "91", templateName: "x", language: "en", headerImageUrl: "https://x/p.jpg", bodyParams: ["Priya"], previewText: "" });
+    expect(p).toMatchObject({
+      template: {
+        components: [
+          { type: "header", parameters: [{ type: "image", image: { link: "https://x/p.jpg" } }] },
+          { type: "body", parameters: [{ type: "text", text: "Priya" }] },
+        ],
+      },
+    });
+  });
+
+  it("uploads a sample picture to Meta in two steps", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "upload:SESSION" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ h: "4::HANDLE" })));
+    const h = await uploadSampleToMeta({ appId: "APP", token: "T", bytes: new ArrayBuffer(10), fileType: "image/jpeg", fileName: "a.jpg" }, fetchMock);
+    expect(h).toBe("4::HANDLE");
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/APP\/uploads\?file_name=a\.jpg&file_length=10&file_type=image%2Fjpeg$/);
+    expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/upload:SESSION$/);
+    expect(fetchMock.mock.calls[1][1].headers).toEqual({ Authorization: "OAuth T", file_offset: "0" });
   });
 });

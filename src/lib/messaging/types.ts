@@ -18,6 +18,8 @@ export type OutgoingMessage =
       templateName: string;
       language: string; // e.g. "en", "ta"
       bodyParams?: string[];
+      /** Public link to the picture, for templates with a picture heading. */
+      headerImageUrl?: string;
       /** Final text as the customer would read it. Used by wa.me mode. */
       previewText: string;
     }

@@ -13,6 +13,7 @@ export const env = {
 
   // Meta app (one for Orbit) and the test sandbox
   metaAppSecret: () => need("META_APP_SECRET"),
+  metaAppId: () => need("META_APP_ID"),
   metaVerifyToken: () => need("META_WEBHOOK_VERIFY_TOKEN"),
   sandbox: () => ({
     accessToken: process.env.META_SANDBOX_ACCESS_TOKEN ?? "",

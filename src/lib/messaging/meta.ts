@@ -9,9 +9,15 @@ export function buildMetaPayload(message: OutgoingMessage) {
     return { ...base, type: "text", text: { preview_url: true, body: message.text } };
   }
 
-  const components = message.bodyParams?.length
-    ? [{ type: "body", parameters: message.bodyParams.map((text) => ({ type: "text", text })) }]
-    : undefined;
+  const parts = [
+    ...(message.headerImageUrl
+      ? [{ type: "header", parameters: [{ type: "image", image: { link: message.headerImageUrl } }] }]
+      : []),
+    ...(message.bodyParams?.length
+      ? [{ type: "body", parameters: message.bodyParams.map((text) => ({ type: "text", text })) }]
+      : []),
+  ];
+  const components = parts.length ? parts : undefined;
 
   return {
     ...base,

@@ -7,12 +7,18 @@ import { graphRequest, type FetchLike } from "./graph";
 
 export type TemplateCategory = "UTILITY" | "MARKETING";
 
+export type TemplateHeader =
+  | { type: "TEXT"; text: string }
+  /** handle: Meta's upload handle for the sample picture; imageUrl: our stored copy (preview + default send). */
+  | { type: "IMAGE"; handle: string; imageUrl: string };
+
 export type NewTemplate = {
   name: string;
   language: string;
   category: TemplateCategory;
   body: string;
   examples: string[];
+  header?: TemplateHeader;
   footer?: string;
 };
 
@@ -31,6 +37,9 @@ export type TemplateComponent = {
   type: string; // HEADER | BODY | FOOTER | BUTTONS | CAROUSEL
   format?: string; // HEADER: TEXT | IMAGE | VIDEO | DOCUMENT | LOCATION
   text?: string;
+  example?: { header_handle?: string[]; body_text?: string[][] };
+  /** Orbit's own copy of a picture heading (not sent to Meta). */
+  orbit_image_url?: string;
   buttons?: { type: string; text?: string; url?: string; phone_number?: string }[];
 };
 
@@ -60,6 +69,13 @@ export function validateTemplate(t: NewTemplate): string[] {
   }
   if (t.examples.filter((e) => e.trim()).length < n) errors.push(`Give an example value for each of the ${n} placeholders`);
   if (/^\s*\{\{\d+\}\}|\{\{\d+\}\}\s*$/.test(t.body)) errors.push("Meta rejects text that starts or ends with a placeholder");
+  if (t.header?.type === "TEXT") {
+    if (!t.header.text.trim()) errors.push("Heading is empty");
+    if (t.header.text.length > 60) errors.push("Heading is over 60 characters");
+    if (/\{\{\d+\}\}/.test(t.header.text)) errors.push("Blanks in the heading aren't supported yet");
+  }
+  if (t.header?.type === "IMAGE" && !t.header.handle) errors.push("Picture upload to Meta failed");
+  if (t.footer && t.footer.length > 60) errors.push("Footer is over 60 characters");
   return errors;
 }
 
@@ -73,12 +89,26 @@ export function buildTemplatePayload(t: NewTemplate) {
   const bodyComponent: Record<string, unknown> = { type: "BODY", text: t.body };
   if (n > 0) bodyComponent.example = { body_text: [t.examples.slice(0, n)] };
 
+  const header =
+    t.header?.type === "TEXT"
+      ? [{ type: "HEADER", format: "TEXT", text: t.header.text }]
+      : t.header?.type === "IMAGE"
+        ? [{ type: "HEADER", format: "IMAGE", example: { header_handle: [t.header.handle] } }]
+        : [];
+
   return {
     name: t.name,
     language: t.language,
     category: t.category,
-    components: [bodyComponent, ...(t.footer ? [{ type: "FOOTER", text: t.footer }] : [])],
+    components: [...header, bodyComponent, ...(t.footer ? [{ type: "FOOTER", text: t.footer }] : [])],
   };
+}
+
+/** What Orbit stores: Meta's components plus our own copy of the picture for previews and default sends. */
+export function componentsToStore(t: NewTemplate): TemplateComponent[] {
+  return buildTemplatePayload(t).components.map((c) =>
+    c.type === "HEADER" && t.header?.type === "IMAGE" ? { ...c, orbit_image_url: t.header.imageUrl } : c,
+  ) as TemplateComponent[];
 }
 
 export async function createTemplate(wabaId: string, token: string, t: NewTemplate, fetchImpl?: FetchLike) {

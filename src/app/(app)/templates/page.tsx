@@ -1,5 +1,6 @@
 import { loadSandbox } from "@/lib/page-data";
-import { createTemplateAction, syncTemplates } from "../../actions";
+import { syncTemplates } from "../../actions";
+import { TemplateForm } from "./template-form";
 import { Notice, param } from "../notice";
 import { PendingButton } from "../pending-button";
 
@@ -32,49 +33,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
 
       <Notice ok={param(sp.ok)} error={param(sp.error)} />
 
-      <form action={createTemplateAction} className="card grid gap-5 md:grid-cols-3">
-        <div className="md:col-span-3">
-          <h2 className="text-lg font-semibold text-navy">Create a new template</h2>
-          <p className="hint mt-1">Write the message once; Meta reviews it (usually within minutes) and it then appears below and on Send test.</p>
-        </div>
-        <div>
-          <label className="label" htmlFor="name">Name</label>
-          <input className="input" id="name" name="name" placeholder="visit_checkin" required />
-        </div>
-        <div>
-          <label className="label" htmlFor="language">Language</label>
-          <select className="input" id="language" name="language" defaultValue="en">
-            <option value="en">English (en)</option>
-            <option value="ta">Tamil (ta)</option>
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="category">Category</label>
-          <select className="input" id="category" name="category" defaultValue="UTILITY">
-            <option value="UTILITY">Utility (about a specific visit or order)</option>
-            <option value="MARKETING">Marketing (offers, reactivation)</option>
-          </select>
-        </div>
-        <div className="md:col-span-3">
-          <label className="label" htmlFor="body">Message text</label>
-          <textarea
-            className="input min-h-28"
-            id="body"
-            name="body"
-            required
-            defaultValue={"Hi {{1}}, this is {{2}}. Thank you for visiting us today. Is everything good after your visit?"}
-          />
-          <p className="hint mt-1">Use {"{{1}}"}, {"{{2}}"}… for values that change. Don&apos;t start or end with one.</p>
-        </div>
-        <div className="md:col-span-2">
-          <label className="label" htmlFor="examples">Example values</label>
-          <input className="input" id="examples" name="examples" defaultValue="Priya | Ravi" />
-          <p className="hint mt-1">One per placeholder, separated by |. Meta uses these to review.</p>
-        </div>
-        <div className="flex items-end">
-          <PendingButton className="btn w-full" label="Submit to Meta" pendingLabel="Submitting…" />
-        </div>
-      </form>
+      <TemplateForm />
 
       <h2 className="pt-2 text-lg font-semibold text-navy">Your templates</h2>
       <div className="card p-0">

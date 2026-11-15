@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { TemplateComponent } from "@/lib/meta/templates";
-import { fillBlanks, templateView } from "@/lib/meta/template-view";
+import { templateView } from "@/lib/meta/template-view";
+import { WhatsAppBubble } from "./whatsapp-bubble";
 import { sendTest } from "../actions";
 
 export type TemplateOption = {
@@ -32,6 +33,8 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
   const [key, setKey] = useState(`${options[0].name}|${options[0].language}`);
   const [values, setValues] = useState<string[]>([]);
   const [text, setText] = useState("");
+  const [pickedImage, setPickedImage] = useState<string>();
+  useEffect(() => () => (pickedImage ? URL.revokeObjectURL(pickedImage) : undefined), [pickedImage]);
 
   const selected = options.find((t) => `${t.name}|${t.language}` === key) ?? options[0];
   const view = useMemo(() => templateView(selected.components, selected.body), [selected]);
@@ -39,7 +42,9 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
   const pick = (k: string) => {
     setKey(k);
     setValues([]);
+    setPickedImage(undefined);
   };
+  const hasPicture = view.header?.kind === "media" && view.header.format === "IMAGE";
   const setValue = (i: number, v: string) => setValues((old) => Object.assign([...old], { [i]: v }));
   const filled = Array.from({ length: view.blanks }, (_, i) => values[i] ?? "");
   const canSend = kind === "text" ? true : view.sendable && filled.every((v) => v.trim());
@@ -109,6 +114,24 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
               <p className="hint md:col-span-2">This template has no blanks to fill: it is sent exactly as shown.</p>
             )}
 
+            {hasPicture ? (
+              <div className="md:col-span-2">
+                <label className="label" htmlFor="header_image">Picture for this send (optional)</label>
+                <input
+                  className="input file:mr-3 file:rounded-full file:border-0 file:bg-navy-soft file:px-3 file:py-1 file:text-navy"
+                  id="header_image"
+                  name="header_image"
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    setPickedImage(f ? URL.createObjectURL(f) : undefined);
+                  }}
+                />
+                <p className="hint mt-1">Leave empty to use the template&apos;s own picture. JPG or PNG, under 4 MB.</p>
+              </div>
+            ) : null}
+
             {!view.sendable ? (
               <p className="rounded-lg bg-gold-soft px-3 py-2 text-sm text-navy md:col-span-2">{view.reason}</p>
             ) : null}
@@ -126,7 +149,7 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
         </div>
       </div>
 
-      <Preview kind={kind} view={view} values={filled} text={text} />
+      {kind === "text" ? <WhatsAppBubble plainText={text} /> : <WhatsAppBubble view={view} values={filled} imageUrl={pickedImage} />}
     </form>
   );
 }
@@ -145,63 +168,5 @@ function SendButton({ disabled }: { disabled: boolean }) {
         "Send"
       )}
     </button>
-  );
-}
-
-function Preview({
-  kind,
-  view,
-  values,
-  text,
-}: {
-  kind: "template" | "text";
-  view: ReturnType<typeof templateView>;
-  values: string[];
-  text: string;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="text-sm font-medium text-ink">What the customer will see</div>
-      <div className="rounded-2xl p-4" style={{ background: "#efeae2" }}>
-        <div className="max-w-[300px] overflow-hidden rounded-lg bg-white text-[14px] leading-5 text-[#111b21] shadow-sm">
-          {kind === "text" ? (
-            <p className="whitespace-pre-wrap px-3 py-2">{text || <span className="text-muted">Type a message…</span>}</p>
-          ) : (
-            <>
-              {view.header?.kind === "media" ? (
-                <div className="m-1 flex h-32 items-center justify-center rounded bg-[#d1d7db] text-xs uppercase tracking-wide text-[#54656f]">
-                  {view.header.format}
-                </div>
-              ) : null}
-              <div className="px-3 pt-2 pb-1">
-                {view.header?.kind === "text" ? <p className="mb-1 font-semibold">{view.header.text}</p> : null}
-                <p className="whitespace-pre-wrap">
-                  {fillBlanks(view.body, values)
-                    .split(/(\{\{\d+\}\})/g)
-                    .map((part, i) =>
-                      /^\{\{\d+\}\}$/.test(part) ? (
-                        <span key={i} className="rounded bg-gold-soft px-1 text-navy">
-                          {part}
-                        </span>
-                      ) : (
-                        part
-                      ),
-                    )}
-                </p>
-                {view.footer ? <p className="mt-1 text-xs text-[#667781]">{view.footer}</p> : null}
-                <p className="mt-1 text-right text-[11px] text-[#667781]">now</p>
-              </div>
-              {view.buttons.map((b, i) => (
-                <div key={i} className="border-t border-[#e9edef] py-2 text-center text-sm font-medium text-[#027eb5]">
-                  {b.type === "URL" ? "↗ " : b.type === "PHONE_NUMBER" ? "☎ " : "↩ "}
-                  {b.text}
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      </div>
-      <p className="hint">Preview only. WhatsApp&apos;s exact styling differs a little by phone.</p>
-    </div>
   );
 }

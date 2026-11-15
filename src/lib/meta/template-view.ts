@@ -7,7 +7,7 @@ import type { TemplateComponent } from "./templates";
  */
 
 export type TemplateView = {
-  header?: { kind: "text"; text: string } | { kind: "media"; format: string };
+  header?: { kind: "text"; text: string } | { kind: "media"; format: string; sampleUrl?: string };
   body: string;
   footer?: string;
   buttons: { type: string; text: string; url?: string }[];
@@ -35,7 +35,11 @@ export function templateView(components: TemplateComponent[] | null | undefined,
     h && (h.format ?? "TEXT").toUpperCase() === "TEXT"
       ? { kind: "text" as const, text: h.text ?? "" }
       : h
-        ? { kind: "media" as const, format: (h.format ?? "MEDIA").toUpperCase() }
+        ? {
+            kind: "media" as const,
+            format: (h.format ?? "MEDIA").toUpperCase(),
+            sampleUrl: h.orbit_image_url ?? h.example?.header_handle?.[0],
+          }
         : undefined;
 
   const buttons = (btns?.buttons ?? []).map((x) => ({ type: x.type, text: x.text ?? "", url: x.url }));
@@ -50,7 +54,7 @@ export function templateView(components: TemplateComponent[] | null | undefined,
 
   // What the simple test sender can't fill in yet.
   if (carousel) return { ...view, sendable: false, reason: "Carousel templates can only be previewed here for now." };
-  if (header?.kind === "media")
+  if (header?.kind === "media" && header.format !== "IMAGE")
     return { ...view, sendable: false, reason: `This template needs a ${header.format.toLowerCase()} in its heading; sending it isn't supported on this screen yet.` };
   if (header?.kind === "text" && blanksIn(header.text) > 0)
     return { ...view, sendable: false, reason: "This template has a blank in its heading; sending it isn't supported on this screen yet." };
