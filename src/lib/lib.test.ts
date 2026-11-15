@@ -292,3 +292,24 @@ describe("picture templates", () => {
     expect(fetchMock.mock.calls[1][1].headers).toEqual({ Authorization: "OAuth T", file_offset: "0" });
   });
 });
+
+import { STARTERS } from "./template-starters";
+
+describe("template starters", () => {
+  it("every starter passes Meta's checks and marketing ones carry a STOP line", () => {
+    for (const s of STARTERS.filter((x) => x.id !== "blank")) {
+      const errors = validateTemplate({
+        name: s.name,
+        language: "en",
+        category: s.category,
+        body: s.body,
+        examples: s.examples,
+        footer: s.footer,
+        header: s.headerType === "TEXT" ? { type: "TEXT", text: s.headerText ?? "" } : s.headerType === "IMAGE" ? { type: "IMAGE", handle: "h", imageUrl: "u" } : undefined,
+      });
+      expect(errors, s.id).toEqual([]);
+      expect(s.examples.length, s.id).toBe(countPlaceholders(s.body));
+      if (s.category === "MARKETING") expect(s.footer, s.id).toMatch(/STOP/);
+    }
+  });
+});

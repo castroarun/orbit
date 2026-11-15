@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { templateView } from "@/lib/meta/template-view";
 import type { TemplateComponent } from "@/lib/meta/templates";
+import { STARTERS, type Starter } from "@/lib/template-starters";
 import { createTemplateAction } from "../../actions";
 import { PendingButton } from "../pending-button";
 import { WhatsAppBubble } from "../whatsapp-bubble";
@@ -13,12 +14,31 @@ const blanksIn = (text: string) => {
 };
 
 export function TemplateForm() {
-  const [headerType, setHeaderType] = useState<"NONE" | "TEXT" | "IMAGE">("NONE");
-  const [headerText, setHeaderText] = useState("");
+  const first = STARTERS[0];
+  const [starterId, setStarterId] = useState(first.id);
+  const [name, setName] = useState(first.name);
+  const [category, setCategory] = useState<Starter["category"]>(first.category);
+  const [headerType, setHeaderType] = useState<Starter["headerType"]>(first.headerType);
+  const [headerText, setHeaderText] = useState(first.headerText ?? "");
   const [imageUrl, setImageUrl] = useState<string>();
-  const [body, setBody] = useState("Hi {{1}}, this is {{2}}. Thank you for visiting us today. Is everything good after your visit?");
-  const [examples, setExamples] = useState<string[]>(["Priya", "Ravi"]);
-  const [footer, setFooter] = useState("");
+  const [body, setBody] = useState(first.body);
+  const [examples, setExamples] = useState<string[]>(first.examples);
+  const [footer, setFooter] = useState(first.footer ?? "");
+
+  const starter = STARTERS.find((x) => x.id === starterId) ?? first;
+  const applyStarter = (id: string) => {
+    const x = STARTERS.find((s) => s.id === id) ?? first;
+    setStarterId(x.id);
+    setName(x.name);
+    setCategory(x.category);
+    setHeaderType(x.headerType);
+    setHeaderText(x.headerText ?? "");
+    setImageUrl(undefined);
+    setBody(x.body);
+    setExamples(x.examples);
+    setFooter(x.footer ?? "");
+  };
+  const groups = [...new Set(STARTERS.map((x) => x.group))];
 
   // Free the local preview of a picked picture when it changes.
   useEffect(() => () => (imageUrl ? URL.revokeObjectURL(imageUrl) : undefined), [imageUrl]);
@@ -43,9 +63,25 @@ export function TemplateForm() {
           <p className="hint mt-1">Write the message once; Meta reviews it (usually within minutes) and it then appears below and on Send test.</p>
         </div>
 
+        <div className="md:col-span-3 rounded-xl bg-navy-soft/60 p-4">
+          <label className="label" htmlFor="starter">Start from</label>
+          <select className="input bg-white" id="starter" value={starterId} onChange={(e) => applyStarter(e.target.value)}>
+            {groups.map((g) => (
+              <optgroup key={g} label={g}>
+                {STARTERS.filter((x) => x.group === g).map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <p className="hint mt-1">{starter.hint} Everything below can be edited.</p>
+        </div>
+
         <div>
           <label className="label" htmlFor="name">Name</label>
-          <input className="input" id="name" name="name" placeholder="visit_checkin" required />
+          <input className="input" id="name" name="name" placeholder="visit_checkin" required value={name} onChange={(e) => setName(e.target.value)} />
           <p className="hint mt-1">Only you see this. Lowercase, use _ for spaces.</p>
         </div>
         <div>
@@ -57,10 +93,13 @@ export function TemplateForm() {
         </div>
         <div>
           <label className="label" htmlFor="category">Category</label>
-          <select className="input" id="category" name="category" defaultValue="UTILITY">
+          <select className="input" id="category" name="category" value={category} onChange={(e) => setCategory(e.target.value as Starter["category"])}>
             <option value="UTILITY">Utility (about a visit or order)</option>
             <option value="MARKETING">Marketing (offers, greetings)</option>
           </select>
+          <p className="hint mt-1">
+            {category === "MARKETING" ? "≈ ₹0.86 per message. Offers and greetings must be Marketing." : "≈ ₹0.12 per message. Only for messages about a specific visit or order."}
+          </p>
         </div>
 
         <div>
@@ -70,7 +109,7 @@ export function TemplateForm() {
             id="header_type"
             name="header_type"
             value={headerType}
-            onChange={(e) => setHeaderType(e.target.value as "NONE" | "TEXT" | "IMAGE")}
+            onChange={(e) => setHeaderType(e.target.value as Starter["headerType"])}
           >
             <option value="NONE">None</option>
             <option value="TEXT">Bold text</option>
