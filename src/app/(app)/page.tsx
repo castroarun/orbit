@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { loadSandbox } from "@/lib/page-data";
 import { Notice, param } from "./notice";
 import { SendForm, type TemplateOption } from "./send-form";
@@ -18,7 +19,10 @@ export default async function SendTestPage({ searchParams }: PageProps<"/">) {
         <h1 className="text-2xl font-semibold text-navy">Send a test message</h1>
         <p className="mt-1 text-sm text-muted">
           From Meta&apos;s test number ({business.wa_phone_number_id ? `phone number ID ${business.wa_phone_number_id}` : "not set up yet"}).
-          It only delivers to phones you have added as recipients in Meta&apos;s App Dashboard. Only approved templates are listed.
+          It only delivers to phones you have added as recipients in Meta&apos;s App Dashboard. Only approved templates are listed.{" "}
+          <Link href="/templates" className="font-medium text-navy underline">
+            Create a template
+          </Link>
         </p>
       </div>
 

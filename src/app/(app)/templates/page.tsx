@@ -33,6 +33,10 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
       <Notice ok={param(sp.ok)} error={param(sp.error)} />
 
       <form action={createTemplateAction} className="card grid gap-5 md:grid-cols-3">
+        <div className="md:col-span-3">
+          <h2 className="text-lg font-semibold text-navy">Create a new template</h2>
+          <p className="hint mt-1">Write the message once; Meta reviews it (usually within minutes) and it then appears below and on Send test.</p>
+        </div>
         <div>
           <label className="label" htmlFor="name">Name</label>
           <input className="input" id="name" name="name" placeholder="visit_checkin" required />
@@ -72,6 +76,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
         </div>
       </form>
 
+      <h2 className="pt-2 text-lg font-semibold text-navy">Your templates</h2>
       <div className="card p-0">
         <table className="w-full text-sm">
           <thead className="border-b border-line text-left text-muted">
