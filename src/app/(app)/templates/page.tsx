@@ -1,7 +1,9 @@
+import { syncIfPending } from "@/lib/template-sync";
 import { loadSandbox } from "@/lib/page-data";
 import { syncTemplates } from "../../actions";
 import Link from "next/link";
 import { EDITABLE_STATUSES, formFromComponents } from "@/lib/meta/templates";
+import { templateView } from "@/lib/meta/template-view";
 import { DeleteTemplateButton } from "./delete-button";
 import { TemplateForm, type EditingTemplate } from "./template-form";
 import { Notice, param } from "../notice";
@@ -10,12 +12,15 @@ import { PendingButton } from "../pending-button";
 const badge: Record<string, string> = {
   APPROVED: "bg-green-50 text-green-800",
   PENDING: "bg-gold-soft text-navy",
+  PAUSED: "bg-orange-50 text-orange-800",
+  DISABLED: "bg-red-50 text-red-700",
   REJECTED: "bg-red-50 text-red-700",
 };
 
 export default async function TemplatesPage({ searchParams }: PageProps<"/templates">) {
   const sp = await searchParams;
   const { business, supabase } = await loadSandbox();
+  await syncIfPending(business);
   const { data: templates } = await supabase
     .from("templates")
     .select("id, name, language, category, status, body, components, rejection_reason, updated_at")
@@ -77,11 +82,32 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
                   <div className="font-medium text-navy">
                     {t.name} <span className="text-muted">· {t.language}</span>
                   </div>
-                  <div className="mt-1 max-w-xl text-muted">{t.body}</div>
+                  {(() => {
+                    const v = templateView(t.components, t.body);
+                    return (
+                      <div className="mt-2 flex max-w-xl gap-3">
+                        {v.header?.kind === "media" && v.header.sampleUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={v.header.sampleUrl} alt="" className="h-14 w-14 shrink-0 rounded object-cover" />
+                        ) : v.header?.kind === "media" ? (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-navy-soft text-[10px] text-muted">{v.header.format}</div>
+                        ) : null}
+                        <div className="text-muted">
+                          {v.header?.kind === "text" ? <div className="font-medium text-ink">{v.header.text}</div> : null}
+                          <div className="whitespace-pre-wrap">{v.body}</div>
+                          {v.footer ? <div className="mt-1 text-xs">{v.footer}</div> : null}
+                          {v.buttons.length ? (
+                            <div className="mt-1 text-xs text-[#027eb5]">{v.buttons.map((b) => `▸ ${b.text}`).join("   ")}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td className="px-6 py-4">{t.category}</td>
                 <td className="px-6 py-4">
                   <span className={`rounded-full px-3 py-1 text-xs font-medium ${badge[t.status] ?? "bg-navy-soft text-navy"}`}>{t.status}</span>
+                  {t.status === "PENDING" ? <div className="hint mt-1">Checked with Meta each time you open this page</div> : null}
                   {t.rejection_reason ? <div className="hint mt-1">{t.rejection_reason}</div> : null}
                 </td>
                 <td className="whitespace-nowrap px-6 py-4 text-right">

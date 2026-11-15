@@ -1,3 +1,4 @@
+import { syncIfPending } from "@/lib/template-sync";
 import Link from "next/link";
 import { loadSandbox } from "@/lib/page-data";
 import { Notice, param } from "./notice";
@@ -6,6 +7,7 @@ import { SendForm, type TemplateOption } from "./send-form";
 export default async function SendTestPage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
   const { business, supabase } = await loadSandbox();
+  await syncIfPending(business);
   const { data: templates } = await supabase
     .from("templates")
     .select("name, language, category, status, body, components")

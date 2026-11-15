@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { TemplateComponent } from "@/lib/meta/templates";
 import { templateView } from "@/lib/meta/template-view";
@@ -34,6 +34,23 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
   const [values, setValues] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [pickedImage, setPickedImage] = useState<string>();
+  // Remember the last test number on this browser, so repeated tests don't need retyping.
+  const toRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem("orbit:lastTestNumber");
+      if (last && toRef.current && !toRef.current.value) toRef.current.value = last;
+    } catch {
+      // storage unavailable: just start empty
+    }
+  }, []);
+  const rememberTo = (v: string) => {
+    try {
+      localStorage.setItem("orbit:lastTestNumber", v);
+    } catch {
+      // ignore
+    }
+  };
   useEffect(() => () => (pickedImage ? URL.revokeObjectURL(pickedImage) : undefined), [pickedImage]);
 
   const selected = options.find((t) => `${t.name}|${t.language}` === key) ?? options[0];
@@ -54,7 +71,7 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
       <div className="card grid content-start gap-5 md:grid-cols-2">
         <div>
           <label className="label" htmlFor="to">To (WhatsApp number)</label>
-          <input className="input" id="to" name="to" placeholder="98400 12345" required />
+          <input className="input" id="to" name="to" placeholder="98400 12345" required ref={toRef} onChange={(e) => rememberTo(e.target.value)} />
           <p className="hint mt-1">Indian numbers get +91 automatically.</p>
         </div>
 

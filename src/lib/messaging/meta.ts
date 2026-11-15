@@ -1,3 +1,4 @@
+import { friendlyMetaError } from "../meta/errors";
 import { graphRequest, MetaApiError, type FetchLike } from "../meta/graph";
 import type { Channel, MessagingAdapter, OutgoingMessage, SendResult } from "./types";
 
@@ -48,7 +49,7 @@ export function createMetaAdapter(fetchImpl: FetchLike = fetch): MessagingAdapte
         if (!id) return { status: "failed", mode: "meta", error: "Meta did not return a message id" };
         return { status: "sent", mode: "meta", providerMessageId: id };
       } catch (e) {
-        if (e instanceof MetaApiError) return { status: "failed", mode: "meta", error: e.message, code: e.code };
+        if (e instanceof MetaApiError) return { status: "failed", mode: "meta", error: friendlyMetaError(e.code, e.message, e.subcode), code: e.code };
         return { status: "failed", mode: "meta", error: e instanceof Error ? e.message : String(e) };
       }
     },

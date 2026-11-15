@@ -14,6 +14,7 @@ export class MetaApiError extends Error {
     message: string,
     public code?: number,
     public status?: number,
+    public subcode?: number,
   ) {
     super(message);
     this.name = "MetaApiError";
@@ -49,7 +50,9 @@ export async function graphRequest<T>(
 
   if (!res.ok) {
     const err = (json as { error?: GraphError } | null)?.error;
-    throw new MetaApiError(err?.message ?? `Meta API error (HTTP ${res.status})`, err?.code, res.status);
+    // Meta puts the useful detail in error_user_msg when present.
+    const detail = (err as { error_user_msg?: string } | undefined)?.error_user_msg;
+    throw new MetaApiError(detail || err?.message || `Meta API error (HTTP ${res.status})`, err?.code, res.status, err?.error_subcode);
   }
   return json as T;
 }

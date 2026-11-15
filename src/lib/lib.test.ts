@@ -80,7 +80,8 @@ describe("messaging adapter", () => {
       new Response(JSON.stringify({ error: { message: "Template name does not exist", code: 132001 } }), { status: 400 }),
     );
     const r = await createMetaAdapter(fetchMock).send(template, { phoneNumberId: "123", accessToken: "tok" });
-    expect(r).toEqual({ status: "failed", mode: "meta", error: "Template name does not exist", code: 132001 });
+    expect(r).toMatchObject({ status: "failed", mode: "meta", code: 132001 });
+    expect(r.status === "failed" && r.error).toMatch(/isn't approved yet/);
   });
 
   it("Meta mode refuses without a connection", async () => {
@@ -340,5 +341,23 @@ describe("edit and delete templates", () => {
   it("reads stored components back into the builder", () => {
     const f = formFromComponents(componentsToStore({ ...t, header: { type: "IMAGE", handle: "4::h", imageUrl: "https://x/p.jpg" } }));
     expect(f).toMatchObject({ headerType: "IMAGE", imageUrl: "https://x/p.jpg", imageHandle: "4::h", examples: ["Priya"], footer: "Reply STOP to stop offers", hasButtons: false });
+  });
+});
+
+import { friendlyMetaError } from "./meta/errors";
+
+describe("plain-language Meta errors", () => {
+  it("explains common problems", () => {
+    expect(friendlyMetaError(190, "x")).toMatch(/expired/);
+    expect(friendlyMetaError(131030, "x")).toMatch(/allowed list/);
+    expect(friendlyMetaError(100, "Invalid parameter", 2388023)).toMatch(/30 days/);
+    expect(friendlyMetaError(undefined, "Error validating access token: Session has expired")).toMatch(/expired/);
+    expect(friendlyMetaError(999, "Something odd")).toBe("Something odd");
+  });
+
+  it("is used when a send fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "raw", code: 131030 } }), { status: 400 }));
+    const r = await createMetaAdapter(fetchMock).send({ kind: "text", to: "91", text: "hi" }, { phoneNumberId: "1", accessToken: "t" });
+    expect(r.status === "failed" && r.error).toMatch(/allowed list/);
   });
 });

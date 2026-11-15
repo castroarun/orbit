@@ -3,16 +3,23 @@
 import { headers } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { componentsToStore, countPlaceholders, createTemplate, deleteTemplate, EDITABLE_STATUSES, editTemplate, formFromComponents, listTemplates, toTemplateName, validateTemplate, type NewTemplate, type TemplateCategory, type TemplateComponent } from "@/lib/meta/templates";
+import { componentsToStore, countPlaceholders, createTemplate, deleteTemplate, EDITABLE_STATUSES, editTemplate, formFromComponents, toTemplateName, validateTemplate, type NewTemplate, type TemplateCategory } from "@/lib/meta/templates";
 import { uploadSampleToMeta } from "@/lib/meta/upload";
 import { checkImage, storePublicImage } from "@/lib/storage";
 import { env } from "@/lib/env";
+import { friendlyMetaError } from "@/lib/meta/errors";
+import { MetaApiError } from "@/lib/meta/graph";
 import { normalizePhone } from "@/lib/phone";
 import { fillBlanks, templateView } from "@/lib/meta/template-view";
 import { ensureSandboxBusiness, tokenFor } from "@/lib/sandbox";
 import { sendMessage } from "@/lib/send";
+import { syncTemplatesFromMeta } from "@/lib/template-sync";
 import { currentProfile, supabaseAdmin, supabaseForUser } from "@/lib/supabase/server";
 import type { MessagingMode, OutgoingMessage } from "@/lib/messaging";
+
+/** Meta errors in plain language; anything else as-is. */
+const errorText = (e: unknown) =>
+  e instanceof MetaApiError ? friendlyMetaError(e.code, e.message, e.subcode) : e instanceof Error ? e.message : String(e);
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const back = (path: string, params: Record<string, string>) => redirect(`${path}?${new URLSearchParams(params)}`);
@@ -200,7 +207,7 @@ export async function createTemplateAction(form: FormData) {
       );
   } catch (e) {
     unstable_rethrow(e);
-    back("/templates", { error: e instanceof Error ? e.message : String(e) });
+    back("/templates", { error: errorText(e) });
   }
   revalidatePath("/templates");
   back("/templates", { ok: `Template "${name}" sent to Meta for approval` });
@@ -242,7 +249,7 @@ export async function editTemplateAction(form: FormData) {
       .eq("id", row!.id);
   } catch (e) {
     unstable_rethrow(e);
-    back("/templates", { edit: id, error: e instanceof Error ? e.message : String(e) });
+    back("/templates", { edit: id, error: errorText(e) });
   }
   revalidatePath("/templates");
   back("/templates", { ok: `Changes to "${row!.name}" sent to Meta for review` });
@@ -263,7 +270,7 @@ export async function deleteTemplateAction(form: FormData) {
     await db.from("templates").delete().eq("id", row!.id);
   } catch (e) {
     unstable_rethrow(e);
-    back("/templates", { error: e instanceof Error ? e.message : String(e) });
+    back("/templates", { error: errorText(e) });
   }
   revalidatePath("/templates");
   back("/templates", { ok: `Deleted "${row!.name}" (${row!.language}). That name can't be reused for 30 days.` });
@@ -273,33 +280,14 @@ export async function deleteTemplateAction(form: FormData) {
 export async function syncTemplates() {
   await requireAgency();
   const business = await ensureSandboxBusiness();
-  if (!business.waba_id) back("/templates", { error: "Set META_SANDBOX_WABA_ID first" });
-
+  let msg = "";
   try {
-    const list = await listTemplates(business.waba_id!, await tokenFor(business));
-    const rows = list.map((t) => ({
-      business_id: business.id,
-      name: t.name,
-      language: t.language,
-      category: t.category === "MARKETING" ? "MARKETING" : "UTILITY",
-      body: t.components?.find((c) => c.type === "BODY")?.text ?? "",
-      components: t.components ?? null,
-      meta_template_id: t.id,
-      status: t.status,
-      rejection_reason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : null,
-      updated_at: new Date().toISOString(),
-    }));
-    // Keep Orbit's own copy of picture headings, which Meta doesn't return.
-    const { data: existing } = await supabaseAdmin().from("templates").select("name, language, components").eq("business_id", business.id);
-    for (const r of rows) {
-      const old = existing?.find((e) => e.name === r.name && e.language === r.language);
-      const ours = (old?.components as TemplateComponent[] | null)?.find((c) => c.type === "HEADER")?.orbit_image_url;
-      if (ours && r.components) r.components = r.components.map((c) => (c.type === "HEADER" ? { ...c, orbit_image_url: ours } : c));
-    }
-    if (rows.length) await supabaseAdmin().from("templates").upsert(rows, { onConflict: "business_id,name,language" });
+    const r = await syncTemplatesFromMeta(business);
+    msg = `Up to date with Meta: ${r.count} template${r.count === 1 ? "" : "s"}${r.removed ? `, ${r.removed} removed (deleted at Meta)` : ""}`;
   } catch (e) {
-    back("/templates", { error: e instanceof Error ? e.message : String(e) });
+    unstable_rethrow(e);
+    back("/templates", { error: errorText(e) });
   }
   revalidatePath("/templates");
-  back("/templates", { ok: "Templates refreshed from Meta" });
+  back("/templates", { ok: msg });
 }

@@ -24,7 +24,11 @@ export default async function MessagesPage() {
       <div>
         <h1 className="text-2xl font-semibold text-navy">Messages</h1>
         <p className="mt-1 text-sm text-muted">
-          Everything sent and received on the test number. Replies and delivery ticks arrive through the webhook.
+          Everything sent and received on the test number.
+        </p>
+        <p className="mt-3 rounded-lg bg-gold-soft px-3 py-2 text-sm text-navy">
+          While the Meta app is unpublished (until business verification), Meta only delivers test webhooks, so customers&apos;
+          replies and the delivered/read ticks won&apos;t show here yet. Sends are recorded as &quot;sent&quot;.
         </p>
       </div>
 
