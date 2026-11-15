@@ -1,6 +1,7 @@
 import { loadSandbox } from "@/lib/page-data";
 import { createTemplateAction, syncTemplates } from "../../actions";
 import { Notice, param } from "../notice";
+import { PendingButton } from "../pending-button";
 
 const badge: Record<string, string> = {
   APPROVED: "bg-green-50 text-green-800",
@@ -25,7 +26,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
           <p className="mt-1 text-sm text-muted">Meta approves each message format once. Names, links and offers can change on every send.</p>
         </div>
         <form action={syncTemplates}>
-          <button className="btn-gold">Refresh from Meta</button>
+          <PendingButton className="btn-gold" label="Refresh from Meta" pendingLabel="Refreshing…" />
         </form>
       </div>
 
@@ -67,7 +68,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
           <p className="hint mt-1">One per placeholder, separated by |. Meta uses these to review.</p>
         </div>
         <div className="flex items-end">
-          <button className="btn w-full">Submit to Meta</button>
+          <PendingButton className="btn w-full" label="Submit to Meta" pendingLabel="Submitting…" />
         </div>
       </form>
 

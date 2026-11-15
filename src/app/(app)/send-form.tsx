@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
 import type { TemplateComponent } from "@/lib/meta/templates";
 import { fillBlanks, templateView } from "@/lib/meta/template-view";
 import { sendTest } from "../actions";
@@ -121,14 +122,29 @@ export function SendForm({ templates }: { templates: TemplateOption[] }) {
         )}
 
         <div className="md:col-span-2">
-          <button className="btn" disabled={!canSend}>
-            Send
-          </button>
+          <SendButton disabled={!canSend} />
         </div>
       </div>
 
       <Preview kind={kind} view={view} values={filled} text={text} />
     </form>
+  );
+}
+
+/** Shows "Sending…" with a spinner while the message is on its way to Meta. */
+function SendButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button className="btn gap-2" disabled={disabled || pending} aria-busy={pending}>
+      {pending ? (
+        <>
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />
+          Sending…
+        </>
+      ) : (
+        "Send"
+      )}
+    </button>
   );
 }
 

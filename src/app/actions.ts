@@ -100,7 +100,7 @@ export async function sendTest(form: FormData) {
 
   const result = await sendMessage({ business: { ...business, messaging_mode: mode }, message, sentBy: profile.id });
   revalidatePath("/messages");
-  if (result.status === "sent") back("/", { ok: `Sent. Meta message id ${result.providerMessageId}` });
+  if (result.status === "sent") back("/", { ok: "sent" });
   if (result.status === "link") back("/", { link: result.link });
   back("/", { error: (result as { error: string }).error });
 }
