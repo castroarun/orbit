@@ -4,10 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { env } from "../env";
 
+/** Orbit keeps all its tables in the "orbit" schema, so it can share a Supabase project. */
+const DB_SCHEMA = "orbit";
+
 /** Acts as the logged-in person: row-level security applies. Create one per request. */
 export async function supabaseForUser() {
   const cookieStore = await cookies();
   return createServerClient(env.supabaseUrl(), env.supabasePublishableKey(), {
+    db: { schema: DB_SCHEMA },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (toSet) => {
@@ -24,6 +28,7 @@ export async function supabaseForUser() {
 /** Full access, bypasses row-level security. Only for webhooks and trusted server code. */
 export function supabaseAdmin() {
   return createClient(env.supabaseUrl(), env.supabaseSecretKey(), {
+    db: { schema: DB_SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

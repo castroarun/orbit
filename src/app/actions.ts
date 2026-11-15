@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { fillTemplate, createTemplate, listTemplates, toTemplateName, validateTemplate, type TemplateCategory } from "@/lib/meta/templates";
@@ -14,7 +15,7 @@ const back = (path: string, params: Record<string, string>) => redirect(`${path}
 
 async function requireAgency() {
   const profile = await currentProfile();
-  if (!profile?.is_agency) redirect("/login?error=" + encodeURIComponent("Agency access only"));
+  if (!profile?.is_agency) redirect("/no-access");
   return profile;
 }
 
@@ -25,6 +26,18 @@ export async function signIn(form: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email: str(form, "email"), password: str(form, "password") });
   if (error) back("/login", { error: error.message });
   redirect("/");
+}
+
+export async function signInWithGoogle() {
+  const h = await headers();
+  const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  const supabase = await supabaseForUser();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${origin}/auth/callback` },
+  });
+  if (error || !data.url) back("/login", { error: error?.message ?? "Google sign-in unavailable" });
+  redirect(data.url!);
 }
 
 export async function signOut() {

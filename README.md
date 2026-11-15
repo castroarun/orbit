@@ -28,16 +28,19 @@ Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta What
 ## Setup (about an hour, once)
 
 ### 1. Supabase
-1. Create a project at supabase.com. Pick the **Mumbai** region.
-2. In **SQL Editor**, paste and run `supabase/migrations/0001_module1.sql`.
-3. In **Authentication → Sign In / Providers**, turn off "Allow new users to sign up". We add people ourselves.
-4. In **Authentication → Users → Add user**, add yourself with an email and password.
-5. Make yourself agency staff (SQL Editor):
+All of Orbit's tables live in their own **`orbit` schema**, so Orbit can share a Supabase project with another app. For now it shares "castroarun's Project" (Mumbai) and never touches that app's `public` tables.
+
+1. In **SQL Editor**, paste and run `supabase/migrations/0001_module1.sql`.
+2. In **Integrations → Data API → Settings → Exposed schemas**, tick `orbit` and save.
+3. Add yourself as a login under **Authentication → Users → Add user**. If you already have a login in that project, reuse it.
+4. Give yourself agency access (SQL Editor). Logins without a row in `orbit.profiles` can't see anything in Orbit, so the other app's users are locked out automatically:
    ```sql
-   update profiles set is_agency = true
-   where id = (select id from auth.users where email = 'you@example.com');
+   insert into orbit.profiles (id, full_name, is_agency)
+   select id, email, true from auth.users where email = 'you@example.com';
    ```
-6. In **Project Settings → API**, copy the URL, the publishable key and the secret key.
+5. In **Project Settings → API Keys**, copy the URL, the publishable key and the secret key.
+
+Don't turn off sign-ups in a shared project, because the other app may need them.
 
 ### 2. Meta app and test number (no business verification needed yet)
 1. Go to developers.facebook.com → **My Apps → Create app**, and choose the WhatsApp use case.

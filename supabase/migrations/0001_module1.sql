@@ -1,35 +1,31 @@
 -- Orbit · module 1 (review engine) schema
 -- Run once in Supabase → SQL Editor (or `supabase db push`).
+-- Everything lives in its own schema "orbit", so it can share a Supabase
+-- project with another app without touching that app's tables.
 -- Every table holding customer data carries business_id; row-level security
 -- lets agency staff see everything and owners/staff only their own business.
 
 create extension if not exists pgcrypto;
 
+create schema if not exists orbit;
+
 -- ───────────────────────── people ─────────────────────────
 
-create table public.profiles (
+create table orbit.profiles (
   id uuid primary key references auth.users on delete cascade,
   full_name text,
   is_agency boolean not null default false,   -- us (AS Groups · Digital Marketing)
   created_at timestamptz not null default now()
 );
 
--- every new login gets a profile row
-create function public.handle_new_user() returns trigger
-language plpgsql security definer set search_path = public as $$
-begin
-  insert into public.profiles (id, full_name)
-  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', new.email));
-  return new;
-end $$;
-
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
+-- No automatic profile on sign-up: the Supabase project may be shared with
+-- another app, so only people we add to orbit.profiles can use Orbit.
+-- Add someone:  insert into orbit.profiles (id, full_name, is_agency)
+--               select id, email, true from auth.users where email = '...';
 
 -- ───────────────────────── businesses ─────────────────────────
 
-create table public.businesses (
+create table orbit.businesses (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   owner_first_name text,
@@ -50,15 +46,15 @@ create table public.businesses (
 );
 
 -- API tokens: no policies, so only the server (secret key) can read them.
-create table public.business_secrets (
-  business_id uuid primary key references public.businesses on delete cascade,
+create table orbit.business_secrets (
+  business_id uuid primary key references orbit.businesses on delete cascade,
   meta_access_token text,
   updated_at timestamptz not null default now()
 );
 
-create table public.memberships (
-  user_id uuid references public.profiles on delete cascade,
-  business_id uuid references public.businesses on delete cascade,
+create table orbit.memberships (
+  user_id uuid references orbit.profiles on delete cascade,
+  business_id uuid references orbit.businesses on delete cascade,
   role text not null check (role in ('owner', 'staff')),
   created_at timestamptz not null default now(),
   primary key (user_id, business_id)
@@ -66,22 +62,22 @@ create table public.memberships (
 
 -- ───────────────────────── access helpers ─────────────────────────
 
-create function public.is_agency() returns boolean
-language sql stable security definer set search_path = public as $$
-  select coalesce((select is_agency from public.profiles where id = auth.uid()), false)
+create function orbit.is_agency() returns boolean
+language sql stable security definer set search_path = orbit as $$
+  select coalesce((select is_agency from orbit.profiles where id = auth.uid()), false)
 $$;
 
-create function public.can_access(bid uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select public.is_agency()
-      or exists (select 1 from public.memberships m where m.user_id = auth.uid() and m.business_id = bid)
+create function orbit.can_access(bid uuid) returns boolean
+language sql stable security definer set search_path = orbit as $$
+  select orbit.is_agency()
+      or exists (select 1 from orbit.memberships m where m.user_id = auth.uid() and m.business_id = bid)
 $$;
 
 -- ───────────────────────── customers & visits ─────────────────────────
 
-create table public.customers (
+create table orbit.customers (
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
+  business_id uuid not null references orbit.businesses on delete cascade,
   name text,
   phone text not null,                 -- digits only, e.g. 919840012345
   language text default 'ta',
@@ -93,23 +89,23 @@ create table public.customers (
   unique (business_id, phone)
 );
 
-create table public.visits (
+create table orbit.visits (
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
-  customer_id uuid not null references public.customers on delete cascade,
+  business_id uuid not null references orbit.businesses on delete cascade,
+  customer_id uuid not null references orbit.customers on delete cascade,
   visited_at timestamptz not null default now(),
   source text not null default 'staff' check (source in ('staff', 'import', 'billing', 'manual')),
-  created_by uuid references public.profiles,
+  created_by uuid references orbit.profiles,
   created_at timestamptz not null default now()
 );
 
 -- ───────────────────────── review engine ─────────────────────────
 
-create table public.review_requests (
+create table orbit.review_requests (
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
-  visit_id uuid unique references public.visits on delete cascade,
-  customer_id uuid not null references public.customers on delete cascade,
+  business_id uuid not null references orbit.businesses on delete cascade,
+  visit_id uuid unique references orbit.visits on delete cascade,
+  customer_id uuid not null references orbit.customers on delete cascade,
   stage text not null default 'scheduled' check (stage in (
     'scheduled', 'checkin_sent', 'replied', 'no_reply', 'link_sent',
     'reminder_sent', 'tapped', 'thanked', 'stopped', 'expired')),
@@ -119,11 +115,11 @@ create table public.review_requests (
   stop_reason text
 );
 
-create table public.messages (
+create table orbit.messages (
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
-  customer_id uuid references public.customers on delete set null,
-  review_request_id uuid references public.review_requests on delete set null,
+  business_id uuid not null references orbit.businesses on delete cascade,
+  customer_id uuid references orbit.customers on delete set null,
+  review_request_id uuid references orbit.review_requests on delete set null,
   direction text not null check (direction in ('in', 'out')),
   kind text not null default 'text',   -- template | text | button | interactive | image …
   template_name text,
@@ -135,32 +131,32 @@ create table public.messages (
     'queued', 'link', 'sent', 'delivered', 'read', 'failed', 'received')),
   price_category text,                 -- utility | marketing | service (from Meta)
   error text,
-  sent_by uuid references public.profiles,
+  sent_by uuid references orbit.profiles,
   created_at timestamptz not null default now(),
   status_at timestamptz
 );
-create index messages_business_created on public.messages (business_id, created_at desc);
+create index messages_business_created on orbit.messages (business_id, created_at desc);
 
-create table public.short_links (
+create table orbit.short_links (
   code text primary key,               -- r.<domain>/k7f2
-  business_id uuid not null references public.businesses on delete cascade,
-  review_request_id uuid references public.review_requests on delete cascade,
+  business_id uuid not null references orbit.businesses on delete cascade,
+  review_request_id uuid references orbit.review_requests on delete cascade,
   target_url text not null,
   created_at timestamptz not null default now()
 );
 
-create table public.link_taps (
+create table orbit.link_taps (
   id bigint generated always as identity primary key,
-  code text not null references public.short_links on delete cascade,
+  code text not null references orbit.short_links on delete cascade,
   tapped_at timestamptz not null default now(),
   user_agent text
 );
 
-create table public.cases (               -- complaints
+create table orbit.cases (               -- complaints
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
-  customer_id uuid not null references public.customers on delete cascade,
-  trigger_message_id uuid references public.messages on delete set null,
+  business_id uuid not null references orbit.businesses on delete cascade,
+  customer_id uuid not null references orbit.customers on delete cascade,
+  trigger_message_id uuid references orbit.messages on delete set null,
   status text not null default 'open' check (status in (
     'open', 'owner_done', 'checked_back', 'resolved', 'unresolved', 'closed')),
   owner_alerted_at timestamptz,
@@ -170,9 +166,9 @@ create table public.cases (               -- complaints
   created_at timestamptz not null default now()
 );
 
-create table public.templates (
+create table orbit.templates (
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
+  business_id uuid not null references orbit.businesses on delete cascade,
   name text not null,
   language text not null,
   category text not null check (category in ('UTILITY', 'MARKETING')),
@@ -184,34 +180,34 @@ create table public.templates (
   unique (business_id, name, language)
 );
 
-create table public.review_snapshots (
-  business_id uuid not null references public.businesses on delete cascade,
+create table orbit.review_snapshots (
+  business_id uuid not null references orbit.businesses on delete cascade,
   snapshot_date date not null,
   rating numeric(2, 1),
   review_count integer,
   primary key (business_id, snapshot_date)
 );
 
-create table public.google_reviews (      -- stage 4, after Google API approval
+create table orbit.google_reviews (      -- stage 4, after Google API approval
   id uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses on delete cascade,
+  business_id uuid not null references orbit.businesses on delete cascade,
   google_review_id text unique,
   author_name text,
   stars smallint check (stars between 1 and 5),
   text text,
   review_time timestamptz,
-  matched_customer_id uuid references public.customers on delete set null,  -- "possible match"
+  matched_customer_id uuid references orbit.customers on delete set null,  -- "possible match"
   draft_reply text,
-  approved_by uuid references public.profiles,
+  approved_by uuid references orbit.profiles,
   approved_at timestamptz,
   posted_at timestamptz
 );
 
 -- ───────────────────────── scheduler & audit ─────────────────────────
 
-create table public.jobs (
+create table orbit.jobs (
   id bigint generated always as identity primary key,
-  business_id uuid references public.businesses on delete cascade,
+  business_id uuid references orbit.businesses on delete cascade,
   run_at timestamptz not null,
   type text not null,                  -- send_checkin | send_review_link | send_reminder | owner_reminder …
   payload jsonb not null default '{}',
@@ -220,12 +216,12 @@ create table public.jobs (
   last_error text,
   created_at timestamptz not null default now()
 );
-create index jobs_due on public.jobs (state, run_at);
+create index jobs_due on orbit.jobs (state, run_at);
 
-create table public.audit_log (
+create table orbit.audit_log (
   id bigint generated always as identity primary key,
-  business_id uuid references public.businesses on delete set null,
-  actor uuid references public.profiles,
+  business_id uuid references orbit.businesses on delete set null,
+  actor uuid references orbit.profiles,
   action text not null,                -- consent_given | opted_out | customer_deleted | reply_approved …
   details jsonb not null default '{}',
   at timestamptz not null default now()
@@ -233,35 +229,35 @@ create table public.audit_log (
 
 -- ───────────────────────── row-level security ─────────────────────────
 
-alter table public.profiles enable row level security;
-alter table public.businesses enable row level security;
-alter table public.business_secrets enable row level security;   -- no policies = server only
-alter table public.memberships enable row level security;
-alter table public.customers enable row level security;
-alter table public.visits enable row level security;
-alter table public.review_requests enable row level security;
-alter table public.messages enable row level security;
-alter table public.short_links enable row level security;
-alter table public.link_taps enable row level security;
-alter table public.cases enable row level security;
-alter table public.templates enable row level security;
-alter table public.review_snapshots enable row level security;
-alter table public.google_reviews enable row level security;
-alter table public.jobs enable row level security;
-alter table public.audit_log enable row level security;
+alter table orbit.profiles enable row level security;
+alter table orbit.businesses enable row level security;
+alter table orbit.business_secrets enable row level security;   -- no policies = server only
+alter table orbit.memberships enable row level security;
+alter table orbit.customers enable row level security;
+alter table orbit.visits enable row level security;
+alter table orbit.review_requests enable row level security;
+alter table orbit.messages enable row level security;
+alter table orbit.short_links enable row level security;
+alter table orbit.link_taps enable row level security;
+alter table orbit.cases enable row level security;
+alter table orbit.templates enable row level security;
+alter table orbit.review_snapshots enable row level security;
+alter table orbit.google_reviews enable row level security;
+alter table orbit.jobs enable row level security;
+alter table orbit.audit_log enable row level security;
 
-create policy "own profile or agency" on public.profiles
-  for select using (id = auth.uid() or public.is_agency());
+create policy "own profile or agency" on orbit.profiles
+  for select using (id = auth.uid() or orbit.is_agency());
 
-create policy "see own businesses" on public.businesses
-  for select using (public.can_access(id));
-create policy "agency manages businesses" on public.businesses
-  for all using (public.is_agency()) with check (public.is_agency());
+create policy "see own businesses" on orbit.businesses
+  for select using (orbit.can_access(id));
+create policy "agency manages businesses" on orbit.businesses
+  for all using (orbit.is_agency()) with check (orbit.is_agency());
 
-create policy "see own memberships" on public.memberships
-  for select using (user_id = auth.uid() or public.is_agency());
-create policy "agency manages memberships" on public.memberships
-  for all using (public.is_agency()) with check (public.is_agency());
+create policy "see own memberships" on orbit.memberships
+  for select using (user_id = auth.uid() or orbit.is_agency());
+create policy "agency manages memberships" on orbit.memberships
+  for all using (orbit.is_agency()) with check (orbit.is_agency());
 
 -- business-scoped tables: same rule for read and write
 do $$
@@ -271,16 +267,26 @@ begin
                            'cases', 'templates', 'review_snapshots', 'google_reviews']
   loop
     execute format(
-      'create policy "business access" on public.%I for all using (public.can_access(business_id)) with check (public.can_access(business_id))',
+      'create policy "business access" on orbit.%I for all using (orbit.can_access(business_id)) with check (orbit.can_access(business_id))',
       t);
   end loop;
 end $$;
 
-create policy "taps via link" on public.link_taps
-  for select using (exists (select 1 from public.short_links s where s.code = link_taps.code and public.can_access(s.business_id)));
+create policy "taps via link" on orbit.link_taps
+  for select using (exists (select 1 from orbit.short_links s where s.code = link_taps.code and orbit.can_access(s.business_id)));
 
-create policy "agency sees jobs" on public.jobs
-  for select using (public.is_agency());
+create policy "agency sees jobs" on orbit.jobs
+  for select using (orbit.is_agency());
 
-create policy "see audit for own businesses" on public.audit_log
-  for select using (public.is_agency() or (business_id is not null and public.can_access(business_id)));
+create policy "see audit for own businesses" on orbit.audit_log
+  for select using (orbit.is_agency() or (business_id is not null and orbit.can_access(business_id)));
+
+-- ───────────────────────── API access to the orbit schema ─────────────────────────
+-- Also add "orbit" under Project Settings → Data API → Exposed schemas.
+
+grant usage on schema orbit to anon, authenticated, service_role;
+grant all on all tables in schema orbit to authenticated, service_role;
+grant all on all sequences in schema orbit to authenticated, service_role;
+grant execute on all functions in schema orbit to authenticated, service_role;
+alter default privileges in schema orbit grant all on tables to authenticated, service_role;
+alter default privileges in schema orbit grant all on sequences to authenticated, service_role;
