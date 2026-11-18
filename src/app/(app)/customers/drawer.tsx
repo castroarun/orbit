@@ -5,6 +5,7 @@ import type { StageInfo } from "@/lib/customer-stage";
 import { todayIST } from "@/lib/dates";
 import { formatPhone } from "@/lib/phone";
 import { sequenceReadiness } from "@/lib/sequence/engine";
+import { REASK_AFTER_DAYS } from "@/lib/sequence/timing";
 import { supabaseForUser } from "@/lib/supabase/server";
 import { PendingButton } from "../pending-button";
 import { Pill, when } from "../ui";
@@ -139,7 +140,11 @@ export async function CustomerDrawer({
         </div>
         {current ? (
           <div className="mb-3 text-[13px]">
-            <div>{STAGE_TEXT[current.stage] ?? current.stage}</div>
+            <div>
+              {running ? "Now: " : "Last request: "}
+              {STAGE_TEXT[current.stage] ?? current.stage}
+              {running ? "" : ` · ${when(current.started_at)}`}
+            </div>
             {(nextJobs ?? []).map((j, i) => (
               <div key={i} className={j.state === "failed" ? "text-[#9f1d1d]" : "hint"}>
                 {j.state === "failed" ? `Couldn't send ${JOB_TEXT[j.type]?.toLowerCase() ?? j.type}: ${j.last_error}` : `Next: ${JOB_TEXT[j.type] ?? j.type} at ${when(j.run_at)}`}
@@ -156,11 +161,22 @@ export async function CustomerDrawer({
           </form>
         ) : ready.ok ? (
           c.consent_at && !c.opted_out_at ? (
-            <form action={startReview}>
-              {ids}
-              <PendingButton label="Visit done: ask for a review" pendingLabel="Starting…" className="btn" />
-              <p className="hint mt-1.5">Records today&apos;s visit and starts the check-in → review link → reminder sequence.</p>
-            </form>
+            current && !business.test_mode && Date.now() - new Date(current.started_at).getTime() < REASK_AFTER_DAYS * 86_400_000 ? (
+              <p className="hint">
+                Asked on {when(current.started_at, false)}. Can be asked again after{" "}
+                {when(new Date(new Date(current.started_at).getTime() + REASK_AFTER_DAYS * 86_400_000).toISOString(), false)}.
+              </p>
+            ) : (
+              <form action={startReview}>
+                {ids}
+                <PendingButton label={current ? "Ask again (new visit)" : "Visit done: ask for a review"} pendingLabel="Starting…" className={current ? "btn-ghost" : "btn"} />
+                <p className="hint mt-1.5">
+                  {current
+                    ? `The last request (${when(current.started_at)}) is finished. This records a new visit and starts again.${business.test_mode ? " Allowed now because of test mode." : ""}`
+                    : "Records today's visit and starts the check-in → review link → reminder sequence."}
+                </p>
+              </form>
+            )
           ) : (
             <p className="hint">{c.opted_out_at ? "Asked to stop: never messaged." : "Record consent first to send a review request."}</p>
           )
