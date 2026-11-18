@@ -5,7 +5,7 @@ import type { StageInfo } from "@/lib/customer-stage";
 import { todayIST } from "@/lib/dates";
 import { formatPhone } from "@/lib/phone";
 import { sequenceReadiness } from "@/lib/sequence/engine";
-import { REASK_AFTER_DAYS } from "@/lib/sequence/timing";
+import { nextAskAllowedAt } from "@/lib/sequence/timing";
 import { supabaseForUser } from "@/lib/supabase/server";
 import { PendingButton } from "../pending-button";
 import { Pill, when } from "../ui";
@@ -89,6 +89,7 @@ export async function CustomerDrawer({
     ),
   );
   const ready = sequenceReadiness(business);
+  const askAgainAt = current && !business.test_mode ? nextAskAllowedAt(current.started_at) : null;
   const running = current && ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped"].includes(current.stage);
 
   const events: Event[] = [
@@ -161,19 +162,18 @@ export async function CustomerDrawer({
           </form>
         ) : ready.ok ? (
           c.consent_at && !c.opted_out_at ? (
-            current && !business.test_mode && Date.now() - new Date(current.started_at).getTime() < REASK_AFTER_DAYS * 86_400_000 ? (
+            askAgainAt ? (
               <p className="hint">
-                Asked on {when(current.started_at, false)}. Can be asked again after{" "}
-                {when(new Date(new Date(current.started_at).getTime() + REASK_AFTER_DAYS * 86_400_000).toISOString(), false)}.
+                Asked on {when(current!.started_at, false)}. Can be asked again after {when(askAgainAt.toISOString(), false)}.
               </p>
             ) : (
               <form action={startReview}>
                 {ids}
-                <PendingButton label={current ? "Ask again (new visit)" : "Visit done: ask for a review"} pendingLabel="Starting…" className={current ? "btn-ghost" : "btn"} />
+                <PendingButton label={current ? "New visit: start review messages again" : "Visit done: start review messages"} pendingLabel="Starting…" className={current ? "btn-ghost" : "btn"} />
                 <p className="hint mt-1.5">
                   {current
                     ? `The last request (${when(current.started_at)}) is finished. This records a new visit and starts again.${business.test_mode ? " Allowed now because of test mode." : ""}`
-                    : "Records today's visit and starts the check-in → review link → reminder sequence."}
+                    : "Records today's visit. Nothing is sent now: the check-in goes after 30 minutes, the review link after that. Usually automatic via the billing app, website or daily list."}
                 </p>
               </form>
             )

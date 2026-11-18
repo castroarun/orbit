@@ -122,3 +122,26 @@ describe("import checks", () => {
     ]);
   });
 });
+
+import { makeIngestKey, parseIncomingVisit } from "./visits-in";
+
+describe("incoming visits (billing app / website)", () => {
+  const now = new Date("2026-11-18T10:00:00Z");
+  it("accepts a minimal order and normalises the number", () => {
+    const r = parseIncomingVisit({ phone: "98404 12314", consent: true, order_id: "INV-1" }, now);
+    expect(r).toMatchObject({ ok: true, value: { phone: "919840412314", consent: true, orderId: "INV-1", source: "billing" } });
+  });
+  it("treats missing consent as no consent", () => {
+    const r = parseIncomingVisit({ phone: "9840412314" }, now);
+    expect(r.ok && r.value.consent).toBe(false);
+  });
+  it("rejects bad numbers, future dates and odd consent values", () => {
+    expect(parseIncomingVisit({ phone: "123" }, now).ok).toBe(false);
+    expect(parseIncomingVisit({ phone: "9840412314", visited_at: "2026-11-19T10:00:00Z" }, now).ok).toBe(false);
+    expect(parseIncomingVisit({ phone: "9840412314", consent: "yes" }, now).ok).toBe(false);
+    expect(parseIncomingVisit(null, now).ok).toBe(false);
+  });
+  it("makes long private keys", () => {
+    expect(makeIngestKey()).toMatch(/^vk_[a-z2-9]{32}$/);
+  });
+});

@@ -17,7 +17,18 @@ function cellText(v: unknown) {
 }
 
 /** Upload → match columns and check → save. Nothing is sent to anyone from here. */
-export function ImportFlow({ businessId, businessName }: { businessId: string; businessName: string }) {
+export function ImportFlow({
+  businessId,
+  businessName,
+  canStart,
+  cannotStartReason,
+}: {
+  businessId: string;
+  businessName: string;
+  /** Business is ready to send review messages (review link set, test mode or Meta connected). */
+  canStart: boolean;
+  cannotStartReason?: string;
+}) {
   const [fileName, setFileName] = useState("");
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [sheetIdx, setSheetIdx] = useState(0);
@@ -27,6 +38,7 @@ export function ImportFlow({ businessId, businessName }: { businessId: string; b
   const [readError, setReadError] = useState("");
   const [result, setResult] = useState<ImportResult>(undefined);
   const [saving, startSaving] = useTransition();
+  const [startRecent, setStartRecent] = useState(canStart);
 
   const sheet = sheets[sheetIdx];
   const headers = useMemo(() => (sheet?.rows[0] ?? []).map((h) => cellText(h).trim()), [sheet]);
@@ -84,7 +96,7 @@ export function ImportFlow({ businessId, businessName }: { businessId: string; b
     if (!report) return;
     const rows = [...report.ready, ...report.saveOnly];
     startSaving(async () => {
-      setResult(await importCustomers({ businessId, rows, consentSource: hasConsentColumn ? "billing" : source, fileName }));
+      setResult(await importCustomers({ businessId, rows, consentSource: hasConsentColumn ? "billing" : source, fileName, startRecent: canStart && startRecent }));
     });
   }
 
@@ -97,8 +109,21 @@ export function ImportFlow({ businessId, businessName }: { businessId: string; b
           <li>{result.updated} existing customers filled in (nothing overwritten)</li>
           <li>{result.visits} visits recorded</li>
           <li>{result.consented} have agreed to WhatsApp messages</li>
+          {result.started ? <li>{result.started} review requests started (visits from today or yesterday)</li> : null}
         </ul>
-        <p className="hint">Nothing was sent. Review requests start once the message sequence is switched on for this business.</p>
+        {result.notStarted?.length ? (
+          <details className="hint">
+            <summary className="cursor-pointer">{result.notStarted.length} recent visits didn&apos;t start a request</summary>
+            <ul className="mt-1 list-disc pl-5">
+              {[...new Set(result.notStarted)].map((r) => (
+                <li key={r}>
+                  {r} ({result.notStarted!.filter((x) => x === r).length})
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        {!result.started ? <p className="hint">Nothing was sent.</p> : <p className="hint">The check-ins go out in about 30 minutes (1 minute in test mode).</p>}
         <div className="flex gap-2 pt-1">
           <Link href={`/customers?b=${businessId}`} className="btn">
             See customers
@@ -292,8 +317,32 @@ export function ImportFlow({ businessId, businessName }: { businessId: string; b
                 ) : null}
               </section>
 
+              <section className="mb-6">
+                <h2 className="h2">After saving</h2>
+                {canStart ? (
+                  <div className="card mt-2.5 space-y-1 p-0">
+                    <label className="flex cursor-pointer gap-3 border-b border-line-soft px-4 py-3">
+                      <input type="radio" name="after" checked={startRecent} onChange={() => setStartRecent(true)} className="mt-0.5 h-4 w-4 accent-ink" />
+                      <span>
+                        <span className="font-medium">Daily list: start review messages for today&apos;s and yesterday&apos;s visits</span>
+                        <span className="hint block">Only customers who agreed. Older visits are just saved.</span>
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer gap-3 px-4 py-3">
+                      <input type="radio" name="after" checked={!startRecent} onChange={() => setStartRecent(false)} className="mt-0.5 h-4 w-4 accent-ink" />
+                      <span>
+                        <span className="font-medium">Save only</span>
+                        <span className="hint block">Add to the customer list without sending anything.</span>
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <p className="hint mt-1">Customers are saved only. {cannotStartReason}</p>
+                )}
+              </section>
+
               <div className="flex flex-wrap items-center justify-between gap-2.5">
-                <p className="hint">Nothing is sent now. Review requests start once the message sequence is switched on.</p>
+                <p className="hint">{canStart && startRecent ? "Check-ins go about 30 minutes after saving." : "Nothing is sent."}</p>
                 <button className="btn" onClick={save} disabled={saving || !toSave} aria-busy={saving}>
                   {saving ? "Saving…" : `Save ${toSave} customers`}
                 </button>

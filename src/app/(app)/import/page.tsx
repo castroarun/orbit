@@ -1,4 +1,5 @@
 import { listBusinesses, loadAgency } from "@/lib/page-data";
+import { sequenceReadiness } from "@/lib/sequence/engine";
 import { BusinessPicker } from "../business-picker";
 import { param } from "../notice";
 import { Empty, PageHeader } from "../ui";
@@ -18,6 +19,7 @@ export default async function ImportPage({ searchParams }: PageProps<"/import">)
       </div>
     );
   const business = businesses.find((b) => b.id === param(sp.b)) ?? businesses[0];
+  const ready = sequenceReadiness(business);
 
   return (
     <div>
@@ -26,7 +28,13 @@ export default async function ImportPage({ searchParams }: PageProps<"/import">)
         title="Import customers"
         actions={<BusinessPicker businesses={businesses} current={business.id} basePath="/import" />}
       />
-      <ImportFlow key={business.id} businessId={business.id} businessName={business.name} />
+      <ImportFlow
+        key={business.id}
+        businessId={business.id}
+        businessName={business.name}
+        canStart={ready.ok && business.auto_requests}
+        cannotStartReason={!ready.ok ? ready.reason : "Automatic review requests are off for this business (Edit)."}
+      />
     </div>
   );
 }

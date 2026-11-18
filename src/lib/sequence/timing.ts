@@ -62,3 +62,9 @@ const ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"; // no 0/o/1/l, easy to read
 export function makeLinkCode(random: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n))): string {
   return Array.from(random(6), (b) => ALPHABET[b % ALPHABET.length]).join("");
 }
+
+/** When a customer last asked at `startedAt` can be asked again; null if they can be asked now. */
+export function nextAskAllowedAt(startedAt: string, now: number = Date.now()): Date | null {
+  const at = new Date(new Date(startedAt).getTime() + REASK_AFTER_DAYS * 86_400_000);
+  return at.getTime() > now ? at : null;
+}

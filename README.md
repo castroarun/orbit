@@ -8,6 +8,7 @@ Internal platform behind **AS Groups · Digital Marketing**. "Orbit" is an inter
 - **Businesses** (`/businesses`): add and edit clients (area, type, owner's WhatsApp for complaint alerts, Google review link, Place ID, languages, status, plan).
 - **Customers** (`/customers?b=<business>`): search, stage filters, add a customer (consent is a separate unticked box), and a side panel with the customer's story, Record a visit, Record consent, Stop all messages.
 - **Review sequence**: "Visit done: ask for a review" on a customer → check-in (no link) → review link with a tracked short link (`/r/<code>`) after a reply or a wait → one reminder if not tapped → thank-you on the first tap. Steps are rows in `orbit.jobs`; Supabase calls `/api/cron/tick` once a minute (migration 0004). **Test mode** on a business sends everything to a test phone through our Meta test number, with minute-long waits.
+- **Automatic visits**: each business has a key (Businesses → the business → Connections). A billing app or a client website we build sends each order to `POST /api/visits` (format in `src/lib/visits-in.ts`); Orbit records the visit and, with "Ask for reviews automatically" on, starts the review messages. Daily lists go through Import with "start review messages for today's and yesterday's visits". "Send a test order" on the Connections card runs the same path.
 - **Import** (`/import?b=<business>`): Excel (.xlsx) or CSV; columns matched from the headings; checks numbers (+91 added), duplicates, invalid numbers, future dates and consent before saving. Existing customers are filled in, never overwritten. Nothing is sent.
 
 **Stage 1: the approval kit** (under "Meta test tools" in the sidebar). The bare minimum Meta needs to see before approving us as a WhatsApp Tech Provider:
@@ -28,7 +29,7 @@ The database schema already covers all of module 1 (the review engine), so stage
 | Ground rules: consent, STOP, quiet hours 20:00–9:00 | `src/lib/messaging/rules.ts` |
 | Meta Graph API, templates, webhook parsing, signature check | `src/lib/meta/` |
 | Send + log in one call | `src/lib/send.ts` |
-| Database schema with row-level security | `supabase/migrations/` (run in order: 0001 to 0004) |
+| Database schema with row-level security | `supabase/migrations/` (run in order: 0001 to 0005) |
 | Login gate (Next 16 `proxy.ts`, formerly middleware) | `src/proxy.ts` |
 
 ### Where do I change X
@@ -46,6 +47,7 @@ The database schema already covers all of module 1 (the review engine), so stage
 | Review sequence waits (real and test), quiet-hour shifting, link codes | `src/lib/sequence/timing.ts` |
 | Which template each step uses and its blanks | `src/lib/sequence/messages.ts` |
 | Sequence engine: start, run due steps, taps, replies | `src/lib/sequence/engine.ts` |
+| Orders/visits sent in by billing apps and websites (format, checks) | `src/lib/visits-in.ts`, `src/lib/sequence/incoming.ts`, `src/app/api/visits/route.ts` |
 | Stage-1 Meta actions (send, templates) | `src/app/actions.ts` |
 
 Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta WhatsApp Cloud API with the Graph API version pinned in `GRAPH_API_VERSION`.
@@ -55,7 +57,7 @@ Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta What
 ### 1. Supabase
 All of Orbit's tables live in their own **`orbit` schema**, so Orbit can share a Supabase project with another app. For now it shares "castroarun's Project" (Mumbai) and never touches that app's `public` tables.
 
-1. In **SQL Editor**, paste and run each file in `supabase/migrations/` in order (0001 to 0004). All are safe to re-run except 0001.
+1. In **SQL Editor**, paste and run each file in `supabase/migrations/` in order (0001 to 0005). All are safe to re-run except 0001.
 2. In **Integrations → Data API → Settings → Exposed schemas**, tick `orbit` and save.
 3. Add yourself as a login under **Authentication → Users → Add user**. If you already have a login in that project, reuse it.
 4. Give yourself agency access (SQL Editor). Logins without a row in `orbit.profiles` can't see anything in Orbit, so the other app's users are locked out automatically:

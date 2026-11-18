@@ -38,6 +38,7 @@ export type BusinessInput = {
   notes: string | null;
   test_mode: boolean;
   test_phone: string | null;
+  auto_requests: boolean;
 };
 
 const text = (v: FormDataEntryValue | null) => {
@@ -108,6 +109,7 @@ export function businessFromForm(form: FormData): { ok: true; value: BusinessInp
       notes: text(form.get("notes")),
       test_mode,
       test_phone,
+      auto_requests: form.get("auto_requests") === "on",
     },
   };
 }

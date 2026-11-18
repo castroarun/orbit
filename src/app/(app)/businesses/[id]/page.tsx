@@ -5,6 +5,7 @@ import { formatPhone } from "@/lib/phone";
 import { sequenceReadiness } from "@/lib/sequence/engine";
 import { runDueNow } from "../../../actions-crm";
 import { PendingButton } from "../../pending-button";
+import { Connections } from "./connections";
 import { BUSINESS_COLUMNS, loadAgency, monthStartIST, type BusinessRow } from "@/lib/page-data";
 import { Notice, param } from "../../notice";
 import { PageHeader, Pill, Section, when } from "../../ui";
@@ -200,7 +201,7 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
               {b.test_mode ? (
                 <div className="pill pill-wait">Test mode: everything goes to {formatPhone(b.test_phone ?? "")}</div>
               ) : null}
-              <div className={ready.ok ? "" : "hint"}>{ready.ok ? "Ready: start one from a customer with “Visit done: ask for a review”." : ready.reason}</div>
+              <div className={ready.ok ? "" : "hint"}>{ready.ok ? b.auto_requests ? "Ready: new visits from the billing app, website or daily list start review messages automatically." : "Ready, but automatic requests are off (Edit). Start them from a customer." : ready.reason}</div>
               {requests.length ? (
                 <ul className="divide-y divide-line-soft">
                   {requests.map((r) => (
@@ -225,10 +226,13 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
             </div>
           </Section>
 
+          <Connections businessId={b.id} autoRequests={b.auto_requests} />
+
           <Section title="Setup" aside={<Link href={`/businesses/${b.id}/edit`} className="link">Edit</Link>}>
             <ul className="card divide-y divide-line-soft p-0 text-[13.5px]">
               {[
                 ["Status", BUSINESS_STATUSES[b.status]],
+                ["Automatic review requests", b.auto_requests ? "On" : "Off"],
                 ["Owner", b.owner_first_name ?? "—"],
                 ["Complaint alerts to", b.owner_phone ? formatPhone(b.owner_phone) : "—"],
                 ["Languages", b.languages.map((l) => LANG[l] ?? l).join(", ")],

@@ -124,6 +124,16 @@ export function BusinessForm({ business }: { business?: BusinessRow }) {
         <Field label="Notes (only we see these)">
           <textarea name="notes" defaultValue={b?.notes ?? ""} rows={3} className="input" />
         </Field>
+        <label className="flex items-start gap-2.5 text-sm">
+          <input type="checkbox" name="auto_requests" defaultChecked={b ? b.auto_requests : true} className="mt-0.5 h-4 w-4 accent-ink" />
+          <span>
+            Ask for reviews automatically
+            <span className="hint block">
+              Every new visit from the billing app, the website or the daily list starts a review request (only for customers who
+              agreed to WhatsApp messages).
+            </span>
+          </span>
+        </label>
         <p className="hint">
           Sending starts as one-tap (staff press send in WhatsApp). It switches to automatic once the business connects its
           WhatsApp number through Meta.
@@ -138,7 +148,7 @@ export function BusinessForm({ business }: { business?: BusinessRow }) {
             Test mode: send every message to the test phone below instead of the customer
             <span className="hint block">
               Uses our Meta test number, and waits are minutes instead of hours (check-in after 1 min, review link 2 min later,
-              reminder 3 min after that) and quiet hours are skipped. Until our own templates are approved, Meta's pre-approved sample messages stand in. Turn off before real customers.
+              reminder 3 min after that) and quiet hours are skipped. Until our own templates are approved, Meta&apos;s pre-approved sample messages stand in. Turn off before real customers.
             </span>
           </span>
         </label>

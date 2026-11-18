@@ -13,7 +13,9 @@ import type { CleanRow } from "@/lib/import-check";
 import { todayIST } from "@/lib/dates";
 import { normalizePhone } from "@/lib/phone";
 import { runDueJobs, startReviewRequest } from "@/lib/sequence/engine";
-import { currentProfile, supabaseForUser } from "@/lib/supabase/server";
+import { currentProfile, supabaseAdmin, supabaseForUser } from "@/lib/supabase/server";
+import { makeIngestKey, parseIncomingVisit } from "@/lib/visits-in";
+import { recordIncomingVisit } from "@/lib/sequence/incoming";
 
 export type FormState = { error?: string } | undefined;
 
@@ -192,7 +194,9 @@ export async function addVisit(form: FormData) {
 
 // ───────── import ─────────
 
-export type ImportResult = { error?: string; added?: number; updated?: number; visits?: number; consented?: number } | undefined;
+export type ImportResult =
+  | { error?: string; added?: number; updated?: number; visits?: number; consented?: number; started?: number; notStarted?: string[] }
+  | undefined;
 
 const MAX_IMPORT_ROWS = 5000;
 
@@ -206,6 +210,8 @@ export async function importCustomers(payload: {
   rows: CleanRow[];
   consentSource: string;
   fileName: string;
+  /** Daily list: start review messages for visits dated today or yesterday. */
+  startRecent?: boolean;
 }): Promise<ImportResult> {
   const profile = await requireAgency();
   const { businessId, rows } = payload;
@@ -305,9 +311,26 @@ export async function importCustomers(payload: {
       .map((r) => ({ customer_id: existing.get(r.phone)!.id, date: r.visitDate! }))
       .filter((v) => !seen.has(`${v.customer_id}|${v.date}`))
       .map((v) => ({ business_id: businessId, customer_id: v.customer_id, visited_at: visitTimestamp(v.date), source: "import", created_by: profile.id }));
+    const newVisits: { id: string; visited_at: string }[] = [];
     for (let i = 0; i < visitRows.length; i += 500) {
-      const { error } = await supabase.from("visits").insert(visitRows.slice(i, i + 500));
+      const { data, error } = await supabase.from("visits").insert(visitRows.slice(i, i + 500)).select("id, visited_at");
       if (error) throw error;
+      newVisits.push(...(data ?? []));
+    }
+
+    // Daily list: ask the customers who visited today or yesterday (India time).
+    let started = 0;
+    const notStarted: string[] = [];
+    if (payload.startRecent) {
+      const today = todayIST();
+      const yesterday = todayIST(Date.now() - 86_400_000);
+      for (const v of newVisits) {
+        const day = new Date(new Date(v.visited_at).getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
+        if (day !== today && day !== yesterday) continue;
+        const r = await startReviewRequest(v.id);
+        if ("error" in r) notStarted.push(r.error);
+        else started++;
+      }
     }
 
     const consented = clean.filter((r) => r.consent).length;
@@ -319,7 +342,7 @@ export async function importCustomers(payload: {
     });
 
     revalidatePath("/", "layout");
-    return { added: fresh.length, updated, visits: visitRows.length, consented };
+    return { added: fresh.length, updated, visits: visitRows.length, consented, started, notStarted };
   } catch (e) {
     unstable_rethrow(e);
     return { error: errorText(e) };
@@ -356,4 +379,46 @@ export async function runDueNow(form: FormData) {
   const failed = results.filter((r) => r.outcome.startsWith("failed"));
   const msg = results.length ? `Ran ${results.length} step(s)${failed.length ? `, ${failed.length} failed: ${failed[0].outcome.slice(8)}` : ""}` : "Nothing was due yet";
   redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${new URLSearchParams(failed.length ? { error: msg } : { ok: msg })}`);
+}
+
+// ───────── connections ─────────
+
+/** Creates (or replaces) the key a billing app or client website uses to send visits. */
+export async function rotateIngestKey(form: FormData) {
+  const profile = await requireAgency();
+  const businessId = str(form, "business_id");
+  // Confirm the person can see this business before touching its server-only secret.
+  const supabase = await supabaseForUser();
+  const { data: b } = await supabase.from("businesses").select("id").eq("id", businessId).maybeSingle();
+  if (!b) back(`/businesses/${businessId}`, { error: "Business not found" });
+  const key = makeIngestKey();
+  const { error } = await supabaseAdmin()
+    .from("business_secrets")
+    .upsert({ business_id: businessId, ingest_key: key, updated_at: new Date().toISOString() }, { onConflict: "business_id" });
+  if (error) back(`/businesses/${businessId}`, { error: errorText(error) });
+  await supabase.from("audit_log").insert({ business_id: businessId, actor: profile.id, action: "visit_key_created", details: {} });
+  revalidatePath(`/businesses/${businessId}`);
+  back(`/businesses/${businessId}`, { ok: "New key created. Any app using the old key must be updated." });
+}
+
+/** Connections card: sends a sample order through the same path a billing app or website uses. */
+export async function sendTestOrder(form: FormData) {
+  await requireAgency();
+  const businessId = str(form, "business_id");
+  const supabase = await supabaseForUser();
+  const { data: b } = await supabase.from("businesses").select("id").eq("id", businessId).maybeSingle();
+  if (!b) back(`/businesses/${businessId}`, { error: "Business not found" });
+  const parsed = parseIncomingVisit({
+    phone: str(form, "phone"),
+    name: str(form, "name") || null,
+    consent: form.get("consent") === "on",
+    order_id: `TEST-${Date.now().toString(36).toUpperCase()}`,
+    source: str(form, "source") === "website" ? "website" : "billing",
+  });
+  if (!parsed.ok) back(`/businesses/${businessId}`, { error: `Test order: ${parsed.error}` });
+  const r = await recordIncomingVisit(businessId, (parsed as { ok: true; value: Parameters<typeof recordIncomingVisit>[1] }).value);
+  revalidatePath("/", "layout");
+  back(`/businesses/${businessId}`, {
+    ok: `Test order received: visit recorded, review request ${r.review_request}${r.note ? ` (${r.note})` : ""}.`,
+  });
 }
