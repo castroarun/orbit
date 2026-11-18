@@ -36,6 +36,8 @@ export type BusinessInput = {
   status: BusinessStatus;
   plan: string | null;
   notes: string | null;
+  test_mode: boolean;
+  test_phone: string | null;
 };
 
 const text = (v: FormDataEntryValue | null) => {
@@ -55,6 +57,16 @@ export function businessFromForm(form: FormData): { ok: true; value: BusinessInp
     if (!p.ok) return { ok: false, error: `Owner's WhatsApp number: ${p.reason}` };
     owner_phone = p.phone;
   }
+
+  const test_mode = form.get("test_mode") === "on";
+  let test_phone: string | null = null;
+  const rawTest = text(form.get("test_phone"));
+  if (rawTest) {
+    const p = normalizePhone(rawTest);
+    if (!p.ok) return { ok: false, error: `Test phone: ${p.reason}` };
+    test_phone = p.phone;
+  }
+  if (test_mode && !test_phone) return { ok: false, error: "Test mode needs a test phone number (yours), where every message will go" };
 
   const google_review_url = text(form.get("google_review_url"));
   if (google_review_url) {
@@ -94,6 +106,8 @@ export function businessFromForm(form: FormData): { ok: true; value: BusinessInp
       status,
       plan: text(form.get("plan")),
       notes: text(form.get("notes")),
+      test_mode,
+      test_phone,
     },
   };
 }

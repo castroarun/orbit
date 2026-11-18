@@ -130,6 +130,23 @@ export function BusinessForm({ business }: { business?: BusinessRow }) {
         </p>
       </fieldset>
 
+      <fieldset className="space-y-3 rounded-lg border border-dashed border-[#c9c6be] p-4">
+        <legend className="h2 px-1">Testing</legend>
+        <label className="flex items-start gap-2.5 text-sm">
+          <input type="checkbox" name="test_mode" defaultChecked={b?.test_mode} className="mt-0.5 h-4 w-4 accent-ink" />
+          <span>
+            Test mode: send every message to the test phone below instead of the customer
+            <span className="hint block">
+              Uses our Meta test number, and waits are minutes instead of hours (check-in after 1 min, review link 2 min later,
+              reminder 3 min after that). Turn off before real customers.
+            </span>
+          </span>
+        </label>
+        <Field label="Test phone (yours)" hint="Must be one of the numbers added as a recipient on Meta's test number.">
+          <input name="test_phone" inputMode="tel" defaultValue={b?.test_phone ? formatPhone(b.test_phone) : ""} className="input max-w-xs" placeholder="98400 12345" />
+        </Field>
+      </fieldset>
+
       {state?.error ? (
         <div role="alert" className="rounded-lg border border-[#f2d0d0] bg-[#fbeeee] px-4 py-3 text-sm text-[#9f1d1d]">
           {state.error}

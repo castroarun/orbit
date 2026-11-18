@@ -12,6 +12,7 @@ import { CONSENT_SOURCES, type ConsentSource } from "@/lib/consent";
 import type { CleanRow } from "@/lib/import-check";
 import { todayIST } from "@/lib/dates";
 import { normalizePhone } from "@/lib/phone";
+import { runDueJobs, startReviewRequest } from "@/lib/sequence/engine";
 import { currentProfile, supabaseForUser } from "@/lib/supabase/server";
 
 export type FormState = { error?: string } | undefined;
@@ -323,4 +324,36 @@ export async function importCustomers(payload: {
     unstable_rethrow(e);
     return { error: errorText(e) };
   }
+}
+
+// ───────── review requests ─────────
+
+/** "Visit done, ask for a review": records today's visit and starts the sequence. */
+export async function startReview(form: FormData) {
+  const profile = await requireAgency();
+  const id = str(form, "customer_id");
+  const businessId = str(form, "business_id");
+  const supabase = await supabaseForUser();
+  const { data: visit, error } = await supabase
+    .from("visits")
+    .insert({ business_id: businessId, customer_id: id, visited_at: new Date().toISOString(), source: "staff", created_by: profile.id })
+    .select("id")
+    .single();
+  if (error) back("/customers", { b: businessId, c: id, error: errorText(error) });
+  const started = await startReviewRequest(visit!.id);
+  revalidatePath("/customers");
+  if ("error" in started) back("/customers", { b: businessId, c: id, error: `Visit recorded, but the review request didn't start: ${started.error}` });
+  const at = (started as { firstStepAt: Date }).firstStepAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+  back("/customers", { b: businessId, c: id, ok: `Review request started. Check-in message goes at ${at}.` });
+}
+
+/** Runs due steps immediately instead of waiting for the next minute's tick. */
+export async function runDueNow(form: FormData) {
+  await requireAgency();
+  const returnTo = str(form, "return_to") || "/";
+  const results = await runDueJobs();
+  revalidatePath("/", "layout");
+  const failed = results.filter((r) => r.outcome.startsWith("failed"));
+  const msg = results.length ? `Ran ${results.length} step(s)${failed.length ? `, ${failed.length} failed: ${failed[0].outcome.slice(8)}` : ""}` : "Nothing was due yet";
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${new URLSearchParams(failed.length ? { error: msg } : { ok: msg })}`);
 }

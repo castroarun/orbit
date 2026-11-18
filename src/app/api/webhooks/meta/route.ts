@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { isStopMessage } from "@/lib/messaging/rules";
+import { onCustomerReply } from "@/lib/sequence/engine";
 import { verifyMetaSignature } from "@/lib/meta/signature";
 import { parseWebhook, type WebhookEvent } from "@/lib/meta/webhook";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -86,7 +87,9 @@ async function handle(e: WebhookEvent) {
         details: { customer_id: customer.id, via: "whatsapp", text: e.text },
       });
     }
-    // Stage 3 adds: complaint detection and moving review requests to the next step.
+    // A reply to the check-in: send the review link now (free, inside the 24-hour window).
+    // Complaint detection comes in stage 3; the link goes to everyone either way.
+    if (!isStopMessage(e.text)) await onCustomerReply(e.from);
     return;
   }
 

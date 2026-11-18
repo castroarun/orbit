@@ -2,6 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BUSINESS_STATUSES, missingSetup, reviewLink, SENDING_MODES } from "@/lib/business";
 import { formatPhone } from "@/lib/phone";
+import { sequenceReadiness } from "@/lib/sequence/engine";
+import { runDueNow } from "../../../actions-crm";
+import { PendingButton } from "../../pending-button";
 import { BUSINESS_COLUMNS, loadAgency, monthStartIST, type BusinessRow } from "@/lib/page-data";
 import { Notice, param } from "../../notice";
 import { PageHeader, Pill, Section, when } from "../../ui";
@@ -33,7 +36,7 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
 
   const count = (q: PromiseLike<{ count: number | null }>) => q.then((r) => r.count ?? 0);
   const base = () => supabase.from("customers").select("id", { count: "exact", head: true }).eq("business_id", id);
-  const [total, canMessage, noConsent, stopped, visitsThisMonth, snapshot, activity] = await Promise.all([
+  const [total, canMessage, noConsent, stopped, visitsThisMonth, snapshot, activity, requests] = await Promise.all([
     count(base()),
     count(base().not("consent_at", "is", null).is("opted_out_at", null)),
     count(base().is("consent_at", null).is("opted_out_at", null)),
@@ -54,7 +57,15 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
       .order("at", { ascending: false })
       .limit(8)
       .then((r) => r.data ?? []),
+    supabase
+      .from("review_requests")
+      .select("id, stage, started_at, customer_id, customers(name)")
+      .eq("business_id", id)
+      .order("started_at", { ascending: false })
+      .limit(8)
+      .then((r) => r.data ?? []),
   ]);
+  const ready = sequenceReadiness(b);
 
   const link = reviewLink(b);
   const missing = missingSetup(b);
@@ -170,6 +181,33 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
         </div>
 
         <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-7">
+          <Section title="Review requests">
+            <div className="card space-y-3 p-4 text-[13.5px]">
+              {b.test_mode ? (
+                <div className="pill pill-wait">Test mode: everything goes to {formatPhone(b.test_phone ?? "")}</div>
+              ) : null}
+              <div className={ready.ok ? "" : "hint"}>{ready.ok ? "Ready: start one from a customer with “Visit done: ask for a review”." : ready.reason}</div>
+              {requests.length ? (
+                <ul className="divide-y divide-line-soft">
+                  {requests.map((r) => (
+                    <li key={r.id} className="flex justify-between gap-3 py-2">
+                      <Link href={`/customers?b=${b.id}&c=${r.customer_id}`} className="text-ink no-underline hover:underline">
+                        {(r.customers as unknown as { name: string | null } | null)?.name ?? "Customer"}
+                      </Link>
+                      <span className="hint text-right">
+                        {r.stage.replaceAll("_", " ")} · {when(r.started_at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <form action={runDueNow}>
+                <input type="hidden" name="return_to" value={`/businesses/${b.id}`} />
+                <PendingButton label="Run due steps now" pendingLabel="Running…" className="btn-ghost" />
+              </form>
+            </div>
+          </Section>
+
           <Section title="Setup" aside={<Link href={`/businesses/${b.id}/edit`} className="link">Edit</Link>}>
             <ul className="card divide-y divide-line-soft p-0 text-[13.5px]">
               {[

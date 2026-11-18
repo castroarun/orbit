@@ -56,6 +56,17 @@ export const STARTERS: Starter[] = [
     examples: ["Priya", "Sri Sakthi Bakery", "https://example.com/r/k7f2"],
   },
   {
+    id: "review_thanks",
+    group: "Review engine",
+    label: "Thank-you after the tap",
+    hint: "Sent once they open the review link. Worded to fit whether or not they posted.",
+    name: "review_thanks",
+    category: "UTILITY",
+    headerType: "NONE",
+    body: "Thank you, {{1}}! We really appreciate you taking the time to share your experience. See you again soon at {{2}}. Have a lovely day!",
+    examples: ["Priya", "Sri Sakthi Bakery"],
+  },
+  {
     id: "complaint_checkback",
     group: "Review engine",
     label: "Complaint check-back",

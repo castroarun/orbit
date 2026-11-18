@@ -170,6 +170,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
             {selected ? (
               <CustomerDrawer
                 businessId={business.id}
+                business={business}
                 customer={{ ...selected, consentLabel: consentLabel(selected.consent_source) }}
                 closeHref={href({})}
               />

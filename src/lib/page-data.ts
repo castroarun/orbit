@@ -34,11 +34,13 @@ export type BusinessRow = {
   status: "pilot" | "active" | "paused" | "ended";
   plan: string | null;
   notes: string | null;
+  test_mode: boolean;
+  test_phone: string | null;
   created_at: string;
 };
 
 export const BUSINESS_COLUMNS =
-  "id, name, area, kind, owner_first_name, owner_phone, google_place_id, google_review_url, messaging_mode, languages, status, plan, notes, created_at";
+  "id, name, area, kind, owner_first_name, owner_phone, google_place_id, google_review_url, messaging_mode, languages, status, plan, notes, test_mode, test_phone, created_at";
 
 /** Client businesses (never our Meta test number), A–Z. */
 export async function listBusinesses(supabase: Awaited<ReturnType<typeof supabaseForUser>>) {
