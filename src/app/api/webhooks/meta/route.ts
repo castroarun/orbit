@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { isStopMessage } from "@/lib/messaging/rules";
-import { onCustomerReply } from "@/lib/sequence/engine";
+import { handleCustomerReply } from "@/lib/sequence/engine";
 import { verifyMetaSignature } from "@/lib/meta/signature";
 import { parseWebhook, type WebhookEvent } from "@/lib/meta/webhook";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -52,8 +52,13 @@ async function handle(e: WebhookEvent) {
   const db = supabaseAdmin();
 
   if (e.type === "inbound") {
+    const reply = { from: e.from, text: e.text, messageType: e.messageType, waMessageId: e.waMessageId, timestamp: e.timestamp };
     const businessId = await businessByPhoneNumberId(e.phoneNumberId);
-    if (!businessId) return console.warn("message for unknown phone number id", e.phoneNumberId);
+    if (!businessId) {
+      // Not a business number we know; may still be a test-mode reply.
+      if (!isStopMessage(e.text)) await handleCustomerReply(reply);
+      return;
+    }
 
     const { data: customer } = await db
       .from("customers")
@@ -87,9 +92,8 @@ async function handle(e: WebhookEvent) {
         details: { customer_id: customer.id, via: "whatsapp", text: e.text },
       });
     }
-    // A reply to the check-in: send the review link now (free, inside the 24-hour window).
-    // Complaint detection comes in stage 3; the link goes to everyone either way.
-    if (!isStopMessage(e.text)) await onCustomerReply(e.from);
+    // Short okay → review link now; anything else → owner, review messages paused.
+    if (!isStopMessage(e.text)) await handleCustomerReply(reply);
     return;
   }
 

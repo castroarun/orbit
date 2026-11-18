@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addVisit, recordConsent, runDueNow, startReview, stopMessages, updateCustomer } from "../../actions-crm";
+import { addVisit, recordConsent, resolveCase, runDueNow, simulateReply, startReview, stopMessages, updateCustomer } from "../../actions-crm";
 import { CONSENT_SOURCES } from "@/lib/consent";
 import type { StageInfo } from "@/lib/customer-stage";
 import { todayIST } from "@/lib/dates";
@@ -35,12 +35,15 @@ const STAGE_TEXT: Record<string, string> = {
   thanked: "Tapped and thanked: done",
   stopped: "Stopped",
   expired: "Closed without a tap",
+  on_hold: "Paused: the customer wrote back, waiting for the owner",
+  followup_sent: "Apology with the review link sent, not tapped yet",
 };
 const JOB_TEXT: Record<string, string> = {
   send_checkin: "Check-in message",
   send_review_link: "Review link",
   send_reminder: "Gentle reminder",
   send_thanks: "Thank-you",
+  send_followup: "Apology with review link",
   expire: "Close the request",
 };
 
@@ -61,7 +64,7 @@ export async function CustomerDrawer({
   closeHref: string;
 }) {
   const supabase = await supabaseForUser();
-  const [visits, messages, requests] = await Promise.all([
+  const [visits, messages, requests, openCases] = await Promise.all([
     supabase.from("visits").select("id, visited_at, source").eq("customer_id", c.id).order("visited_at", { ascending: false }).limit(50).then((r) => r.data ?? []),
     supabase
       .from("messages")
@@ -77,7 +80,16 @@ export async function CustomerDrawer({
       .order("started_at", { ascending: false })
       .limit(5)
       .then((r) => r.data ?? []),
+    supabase
+      .from("cases")
+      .select("id, created_at, review_request_id")
+      .eq("customer_id", c.id)
+      .in("status", ["open", "owner_done"])
+      .order("created_at", { ascending: false })
+      .then((r) => r.data ?? []),
   ]);
+  const openCase = openCases[0];
+  const caseMessages = openCase ? messages.filter((m) => m.direction === "in" && m.created_at >= openCase.created_at.slice(0, 19)).reverse() : [];
   const current = requests[0];
   // Jobs are agency-only (row-level security), which is who sees this panel.
   const { data: steps } = current
@@ -90,7 +102,8 @@ export async function CustomerDrawer({
   );
   const ready = sequenceReadiness(business);
   const askAgainAt = current && !business.test_mode ? nextAskAllowedAt(current.started_at) : null;
-  const running = current && ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped"].includes(current.stage);
+  const running = current && ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped", "followup_sent"].includes(current.stage);
+  const onHold = current?.stage === "on_hold";
 
   const events: Event[] = [
     { at: c.created_at, title: "Added to the customer list", tone: "grey" as const },
@@ -134,6 +147,41 @@ export async function CustomerDrawer({
         </div>
       </div>
 
+      {openCase ? (
+        <div className="border-b border-line-soft bg-[#fbeeee] px-[18px] py-3.5 text-[13px] text-[#5c1414]">
+          <div className="mb-1.5 flex items-center gap-2">
+            <Pill tone="bad">Needs owner</Pill>
+            <span className="hint">since {when(openCase.created_at)}</span>
+          </div>
+          <p>The customer wrote back. All review messages are paused until someone marks this resolved.</p>
+          {caseMessages.length ? (
+            <div className="mt-2 space-y-1.5">
+              {caseMessages.map((m) => (
+                <div key={m.id} className="ta max-w-[340px] rounded-[10px] rounded-tl-[3px] bg-white px-[11px] py-[9px]">
+                  {m.body ?? <span className="hint">(voice note, photo or other attachment: open WhatsApp to see it)</span>}
+                  <div className="hint mt-1">{when(m.created_at)}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="mt-2">Next: the owner calls or replies on WhatsApp and sorts it out. Then mark it resolved here.</p>
+          <form action={resolveCase} className="mt-2.5 space-y-2">
+            {ids}
+            <input type="hidden" name="case_id" value={openCase.id} />
+            <label className="block">
+              <span className="label">What was done (optional, for the record)</span>
+              <textarea name="note" rows={2} className="ta mt-1 w-full rounded-lg border border-line bg-white px-2.5 py-2" placeholder="e.g. Owner called, replaced the cake" />
+            </label>
+            <PendingButton label={onHold ? "Mark resolved: send the apology with the review link" : "Mark resolved"} pendingLabel="Saving…" className="btn" />
+            {onHold ? (
+              <p className="hint">
+                Sends one message: &ldquo;Sorry again for the trouble… if you&apos;d like to share your experience, here is the link.&rdquo; No reminder after it. It goes whatever the outcome, so every customer is still asked (Google&apos;s rule).
+              </p>
+            ) : null}
+          </form>
+        </div>
+      ) : null}
+
       <div className="border-b border-line-soft px-[18px] py-3.5">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-[13px] font-medium">Review request</span>
@@ -158,7 +206,9 @@ export async function CustomerDrawer({
                       : skipped
                         ? { mark: "–", text: "not needed", cls: "text-muted" }
                         : j.state === "cancelled"
-                          ? { mark: "–", text: j.type === "send_reminder" ? "not needed: link tapped" : "cancelled", cls: "text-muted" }
+                          ? (j.last_error ?? "").startsWith("paused")
+                            ? { mark: "‖", text: "paused until the complaint is resolved", cls: "text-[#9f1d1d]" }
+                            : { mark: "–", text: j.type === "send_reminder" ? "not needed: link tapped" : "cancelled", cls: "text-muted" }
                           : j.state === "failed"
                             ? { mark: "!", text: `couldn't send: ${j.last_error}`, cls: "text-[#9f1d1d]" }
                             : { mark: "○", text: `next, at ${when(j.run_at)}${j.last_error && j.last_error !== "skipped" ? ` (last try: ${j.last_error})` : ""}`, cls: "text-[#8a3b0a] font-medium" };
@@ -178,10 +228,14 @@ export async function CustomerDrawer({
               <p className="hint mt-1.5">Waiting for a reply. The review link goes when they reply, or at the time above if they don&apos;t.</p>
             ) : current.stage === "link_sent" ? (
               <p className="hint mt-1.5">Waiting for a tap. If they tap, the reminder is cancelled and the thank-you goes.</p>
+            ) : current.stage === "followup_sent" ? (
+              <p className="hint mt-1.5">Waiting for a tap. If they tap, the thank-you goes. No reminder after a complaint.</p>
             ) : null}
           </div>
         ) : null}
-        {running ? (
+        {onHold ? (
+          <p className="hint">Review messages are paused (see above).</p>
+        ) : running ? (
           <form action={runDueNow}>
             <input type="hidden" name="return_to" value={`/customers?b=${businessId}&c=${c.id}`} />
             <PendingButton label="Run due steps now" pendingLabel="Running…" className="btn-ghost" />
@@ -211,6 +265,21 @@ export async function CustomerDrawer({
           <p className="hint">{ready.reason}</p>
         )}
       </div>
+
+      {business.test_mode && current ? (
+        <details className="border-b border-line-soft px-[18px] py-3 text-[13px]">
+          <summary className="cursor-pointer">Test: reply as this customer</summary>
+          <form action={simulateReply} className="mt-2 flex flex-wrap items-end gap-2">
+            {ids}
+            <label className="min-w-0 flex-1">
+              <span className="label">Their WhatsApp message</span>
+              <input name="text" className="ta mt-1 w-full rounded-lg border border-line bg-white px-2.5 py-2" placeholder="e.g. Food was cold  or  Ok sure" />
+            </label>
+            <PendingButton label="Pretend they sent it" pendingLabel="Sending…" className="btn-ghost" />
+          </form>
+          <p className="hint mt-1.5">Meta doesn&apos;t pass real replies to Orbit until the app is published, so this stands in for one. It goes through exactly the same steps.</p>
+        </details>
+      ) : null}
 
       <ol className="px-[18px] pt-3.5 pb-1.5">
         {events.map((e, i) => (

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { missingSetup, SENDING_MODES } from "@/lib/business";
 import { listBusinesses, loadAgency, monthStartIST } from "@/lib/page-data";
-import { Empty, PageHeader, Pill, Section } from "./ui";
+import { Empty, PageHeader, Pill, Section, when } from "./ui";
 
 /** Agency overview: every number here is counted from the database, nothing estimated. */
 export default async function OverviewPage() {
@@ -37,7 +37,7 @@ export default async function OverviewPage() {
         count(supabase.from("link_taps").select("id, short_links!inner(business_id)", { count: "exact", head: true }).in("short_links.business_id", ids).gte("tapped_at", since)),
         supabase
           .from("cases")
-          .select("id, created_at, business_id, customers(name)")
+          .select("id, created_at, business_id, customer_id, customers(name), messages:trigger_message_id(body)")
           .in("business_id", ids)
           .in("status", ["open", "owner_done", "checked_back", "unresolved"])
           .order("created_at", { ascending: false })
@@ -139,12 +139,18 @@ export default async function OverviewPage() {
                 <ul className="card divide-y divide-line-soft p-0">
                   {openCases.map((c) => (
                     <li key={c.id} className="flex items-start gap-3 px-4 py-3">
-                      <Pill tone="bad">Complaint</Pill>
+                      <Pill tone="bad">Needs owner</Pill>
                       <div className="min-w-0 flex-1">
                         <div className="font-medium">
                           {(c.customers as unknown as { name: string | null } | null)?.name ?? "Customer"} · {nameOf(c.business_id)}
                         </div>
+                        <div className="hint truncate">
+                          {(c.messages as unknown as { body: string | null } | null)?.body ?? "Customer wrote back"} · {when(c.created_at)} · review messages paused
+                        </div>
                       </div>
+                      <Link href={`/customers?b=${c.business_id}&c=${c.customer_id}`} className="btn-ghost flex-none">
+                        Open
+                      </Link>
                     </li>
                   ))}
                   {setupGaps.map(({ b, missing }) => (

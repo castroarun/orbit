@@ -15,6 +15,7 @@ import { sendMessage } from "../send";
 import { supabaseAdmin } from "../supabase/server";
 import { STARTERS } from "../template-starters";
 import { pickTemplate, replyLinkText, STEP_TEMPLATE, stepParams, TEST_STANDINS, type Step } from "./messages";
+import { classifyReply } from "./reply";
 import { delaysFor, isPreviewBot, makeLinkCode, nextAllowedTime, REASK_AFTER_DAYS, type Quiet } from "./timing";
 
 type Db = ReturnType<typeof supabaseAdmin>;
@@ -37,12 +38,13 @@ type Business = {
 const BUSINESS_FIELDS =
   "id, name, owner_first_name, google_review_url, google_place_id, messaging_mode, wa_phone_number_id, quiet_start, quiet_end, timezone, test_mode, test_phone, is_sandbox";
 
-type JobType = "send_checkin" | "send_review_link" | "send_reminder" | "send_thanks" | "expire";
+type JobType = "send_checkin" | "send_review_link" | "send_reminder" | "send_thanks" | "send_followup" | "expire";
 const JOB_STEP: Partial<Record<JobType, Step>> = {
   send_checkin: "checkin",
   send_review_link: "review_link",
   send_reminder: "reminder",
   send_thanks: "thanks",
+  send_followup: "followup",
 };
 
 const quietOf = (b: Business): Quiet => ({ start: b.quiet_start, end: b.quiet_end, timeZone: b.timezone });
@@ -81,8 +83,8 @@ async function queueJob(db: Db, b: Business, requestId: string, type: JobType, d
   return runAt;
 }
 
-async function cancelJobs(db: Db, requestId: string, types?: JobType[]) {
-  let q = db.from("jobs").update({ state: "cancelled" }).eq("review_request_id", requestId).eq("state", "queued");
+async function cancelJobs(db: Db, requestId: string, types?: JobType[], reason?: string) {
+  let q = db.from("jobs").update({ state: "cancelled", ...(reason ? { last_error: reason } : {}) }).eq("review_request_id", requestId).eq("state", "queued");
   if (types) q = q.in("type", types);
   await q;
 }
@@ -182,8 +184,10 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
     return "done";
   }
   const step = JOB_STEP[job.type]!;
-  // A tap ends the asking: no review link or reminder after it.
-  if ((step === "review_link" || step === "reminder") && rr.link_tapped_at) return "skipped";
+  // Paused for a complaint: nothing goes until someone marks it resolved.
+  if (rr.stage === "on_hold") return "skipped";
+  // A tap ends the asking: no review link, reminder or apology-with-link after it.
+  if ((step === "review_link" || step === "reminder" || step === "followup") && rr.link_tapped_at) return "skipped";
   if (step === "review_link" && rr.stage !== "checkin_sent") return "skipped"; // already sent after a reply
 
   if (!b.test_mode) {
@@ -194,12 +198,21 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
   const ch = await channelFor(b, c.phone);
   const { data: templates } = await db.from("templates").select("name, language, status, body").eq("business_id", ch.templateOwnerId);
   const own = pickTemplate(templates ?? [], step, c.language);
-  const link = step === "review_link" || step === "reminder" ? await ensureLink(db, b, rr.id) : null;
+  const link = step === "review_link" || step === "reminder" || step === "followup" ? await ensureLink(db, b, rr.id) : null;
   const ctx = { customerName: c.name, ownerFirstName: b.owner_first_name, businessName: b.name, link };
 
   // Test mode, own template not approved yet: use Meta's pre-approved sample instead
   // (Meta's wording, our timing and link). Otherwise the same wording as a plain
   // message, which WhatsApp only delivers within 24 h of the tester messaging us.
+  if (step === "followup" && !own) {
+    const text = fillBlanks(STARTERS.find((t) => t.name === STEP_TEMPLATE.followup)!.body, stepParams("followup", ctx));
+    const sent = await sendMessage({ business: ch.sender, message: { kind: "text", to: ch.to, text }, customerId: c.id, reviewRequestId: rr.id, toTestPhone: b.test_mode });
+    if (sent.status !== "failed") return afterSend(db, b, rr.id, c.id, step);
+    if (!b.test_mode || sent.code !== 131047)
+      return { failed: sent.code === 131047 ? `More than 24 h since the customer last wrote, and "${STEP_TEMPLATE.followup}" isn't approved by Meta yet` : sent.error };
+    // Test mode outside the window: fall through to Meta's sample stand-in.
+  }
+
   const standin = !own && b.test_mode ? (templates ?? []).find((t) => t.name === TEST_STANDINS[step].name && t.status === "APPROVED") : undefined;
   const template = own ?? standin;
   const params = own ? stepParams(step, ctx) : standin ? TEST_STANDINS[step].params(ctx) : stepParams(step, ctx);
@@ -230,6 +243,13 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
     return { failed: result.error };
   }
 
+  return afterSend(db, b, rr.id, c.id, step);
+}
+
+/** Moves the request on after a step was sent. */
+async function afterSend(db: Db, b: Business, requestId: string, customerId: string, step: Step): Promise<RunOutcome> {
+  const rr = { id: requestId };
+  const c = { id: customerId };
   const now = new Date().toISOString();
   const d = delaysFor(b.test_mode);
   if (step === "checkin") {
@@ -244,6 +264,11 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
     await queueJob(db, b, rr.id, "expire", d.expire);
   } else if (step === "thanks") {
     await db.from("review_requests").update({ stage: "thanked", completed_at: now }).eq("id", rr.id);
+  } else if (step === "followup") {
+    // One apology with the link; no reminder after a complaint. Closes like any other request.
+    await db.from("review_requests").update({ stage: "followup_sent" }).eq("id", rr.id);
+    await db.from("customers").update({ last_review_ask_at: now }).eq("id", c.id);
+    await queueJob(db, b, rr.id, "expire", d.expire);
   }
   return "done";
 }
@@ -296,6 +321,11 @@ export async function recordTap(code: string, userAgent: string | null): Promise
   if (bot || !link.review_request_id) return link.target_url;
 
   const { data: rr } = await db.from("review_requests").select("id, stage, link_tapped_at").eq("id", link.review_request_id).single();
+  if (rr?.stage === "on_hold" && !rr.link_tapped_at) {
+    // Complaint open: note the tap, but no thank-you until the owner has dealt with it.
+    await db.from("review_requests").update({ link_tapped_at: new Date().toISOString() }).eq("id", rr.id).is("link_tapped_at", null);
+    return link.target_url;
+  }
   if (rr && !rr.link_tapped_at && !["stopped", "expired"].includes(rr.stage)) {
     // Only the first tap moves things on; the thank-you goes once.
     const { data: first } = await db
@@ -313,52 +343,144 @@ export async function recordTap(code: string, userAgent: string | null): Promise
   return link.target_url;
 }
 
+const ACTIVE = ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent"];
+
 /**
- * The customer wrote back after the check-in: send the review link right
- * away, as a free message inside WhatsApp's 24-hour window. Same link for
- * everyone, whatever they wrote (complaint alerts come in stage 3).
- * Returns true if a review request moved on.
+ * A customer wrote to us on WhatsApp (STOP is handled before this).
+ *  - Short "ok / thanks" right after the check-in: the review link goes now,
+ *    free, inside WhatsApp's 24-hour window. Later "ok"s just get logged.
+ *  - Anything else (complaint, question, voice note…): a case opens for the
+ *    owner and every review message pauses until someone marks it resolved.
+ * Also files the message under the right customer (test-mode replies come
+ * from the test phone, not the customer's number).
  */
-export async function onCustomerReply(fromPhone: string): Promise<boolean> {
+export async function handleCustomerReply(
+  e: { from: string; text: string | null; messageType: string; waMessageId: string; timestamp: Date },
+  forRequestId?: string, // test screen: reply as this request's customer
+) {
   const db = supabaseAdmin();
-  // Real customers by their number; test businesses by their test phone.
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const { data: candidates } = await db
     .from("review_requests")
-    .select("id, business_id, customers!inner(id, name, phone), businesses!inner(test_mode, test_phone)")
-    .eq("stage", "checkin_sent")
+    .select("id, stage, business_id, customer_id, customers!inner(id, name, phone), businesses!inner(test_mode, test_phone)")
+    .gte("started_at", since)
+    .neq("stage", "stopped")
     .order("started_at", { ascending: false })
-    .limit(50);
+    .limit(100);
   const match = (candidates ?? []).find((r) => {
+    if (forRequestId) return r.id === forRequestId;
     const c = r.customers as unknown as { phone: string };
     const b = r.businesses as unknown as { test_mode: boolean; test_phone: string | null };
-    return b.test_mode ? b.test_phone === fromPhone : c.phone === fromPhone;
+    return b.test_mode ? b.test_phone === e.from : c.phone === e.from;
   });
-  if (!match) return false;
+  if (!match) return { matched: false as const };
 
-  const { data: moved } = await db.from("review_requests").update({ stage: "replied" }).eq("id", match.id).eq("stage", "checkin_sent").select("id");
-  if (!moved?.length) return false;
-  await cancelJobs(db, match.id, ["send_review_link"]);
+  // File the message under this customer and request.
+  const filed = { business_id: match.business_id, customer_id: match.customer_id, review_request_id: match.id };
+  let { data: msg } = await db.from("messages").update(filed).eq("wa_message_id", e.waMessageId).select("id").maybeSingle();
+  if (!msg) {
+    // The webhook couldn't place it (e.g. a test reply to our test number): save it here.
+    ({ data: msg } = await db
+      .from("messages")
+      .insert({ ...filed, direction: "in", kind: e.messageType, phone: e.from, body: e.text, wa_message_id: e.waMessageId, status: "received", created_at: e.timestamp.toISOString(), status_at: e.timestamp.toISOString() })
+      .select("id")
+      .maybeSingle());
+  }
 
-  const { data: b } = await db.from("businesses").select(BUSINESS_FIELDS).eq("id", match.business_id).single<Business>();
-  const c = match.customers as unknown as { id: string; name: string | null; phone: string };
+  const kind = classifyReply(e.text, e.messageType);
+  if (kind === "ack") {
+    if (match.stage === "checkin_sent") await sendLinkAfterReply(db, match.id);
+    return { matched: true as const, kind };
+  }
+
+  // Needs the owner: one open case per customer; later messages join it.
+  const { data: open } = await db.from("cases").select("id").eq("customer_id", match.customer_id).in("status", ["open", "owner_done"]).limit(1);
+  if (!open?.length) {
+    await db.from("cases").insert({
+      business_id: match.business_id,
+      customer_id: match.customer_id,
+      review_request_id: match.id,
+      trigger_message_id: msg?.id ?? null,
+      status: "open",
+      owner_alerted_at: new Date().toISOString(),
+    });
+    await db.from("audit_log").insert({
+      business_id: match.business_id,
+      action: "complaint_opened",
+      details: { customer_id: match.customer_id, review_request_id: match.id, text: e.text, type: e.messageType },
+    });
+  }
+  if (ACTIVE.includes(match.stage)) {
+    const { data: held } = await db
+      .from("review_requests")
+      .update({ stage: "on_hold", held_from_stage: match.stage })
+      .eq("id", match.id)
+      .eq("stage", match.stage)
+      .select("id");
+    if (held?.length) await cancelJobs(db, match.id, undefined, "paused: customer wrote back");
+  }
+  return { matched: true as const, kind };
+}
+
+/** Short okay after the check-in: the review link as a free message, right away. */
+async function sendLinkAfterReply(db: Db, requestId: string) {
+  const { data: moved } = await db.from("review_requests").update({ stage: "replied" }).eq("id", requestId).eq("stage", "checkin_sent").select("id, business_id, customers(id, name, phone)");
+  const rr = moved?.[0];
+  if (!rr) return false;
+  await cancelJobs(db, requestId, ["send_review_link"]);
+  const { data: b } = await db.from("businesses").select(BUSINESS_FIELDS).eq("id", rr.business_id).single<Business>();
+  const c = rr.customers as unknown as { id: string; name: string | null; phone: string };
   if (!b) return false;
-  const link = await ensureLink(db, b, match.id);
+  const link = await ensureLink(db, b, requestId);
   const ch = await channelFor(b, c.phone);
   const result = await sendMessage({
     business: ch.sender,
     message: { kind: "text", to: ch.to, text: replyLinkText({ customerName: c.name, businessName: b.name, link }) },
     customerId: c.id,
-    reviewRequestId: match.id,
+    reviewRequestId: requestId,
     toTestPhone: b.test_mode,
   });
   if (result.status === "failed") {
     // Fall back to the template a minute later.
-    await db.from("review_requests").update({ stage: "checkin_sent" }).eq("id", match.id);
-    await queueJob(db, b, match.id, "send_review_link", 60_000);
+    await db.from("review_requests").update({ stage: "checkin_sent" }).eq("id", requestId);
+    await queueJob(db, b, requestId, "send_review_link", 60_000);
     return false;
   }
-  await db.from("review_requests").update({ stage: "link_sent" }).eq("id", match.id);
+  await db.from("review_requests").update({ stage: "link_sent" }).eq("id", requestId);
   await db.from("customers").update({ last_review_ask_at: new Date().toISOString() }).eq("id", c.id);
-  await queueJob(db, b, match.id, "send_reminder", delaysFor(b.test_mode).reminder);
+  await queueJob(db, b, requestId, "send_reminder", delaysFor(b.test_mode).reminder);
   return true;
+}
+
+/**
+ * Someone marked a complaint resolved. If review messages were paused, one
+ * apology message with the same review link goes next (within quiet-hours
+ * rules) — whatever the outcome, so every customer is still asked.
+ */
+export async function resolveComplaint(caseId: string, actorId: string, note: string | null): Promise<{ error: string } | { followupAt: Date | null }> {
+  const db = supabaseAdmin();
+  const { data: kase } = await db.from("cases").select("id, status, business_id, customer_id, review_request_id").eq("id", caseId).single();
+  if (!kase) return { error: "Complaint not found" };
+  if (kase.status === "resolved") return { error: "Already marked resolved" };
+  const now = new Date().toISOString();
+  await db.from("cases").update({ status: "resolved", resolved_at: now, resolved_by: actorId, note, outcome: note }).eq("id", caseId);
+  await db.from("audit_log").insert({ business_id: kase.business_id, actor: actorId, action: "complaint_resolved", details: { case_id: caseId, note } });
+
+  // Every paused request of this customer resumes with the apology.
+  const { data: held } = await db.from("review_requests").select("id, link_tapped_at").eq("customer_id", kase.customer_id).eq("stage", "on_hold");
+  if (!held?.length) return { followupAt: null };
+  const { data: b } = await db.from("businesses").select(BUSINESS_FIELDS).eq("id", kase.business_id).single<Business>();
+  if (!b) return { error: "Business not found" };
+  let followupAt: Date | null = null;
+  for (const r of held) {
+    if (r.link_tapped_at) {
+      // They tapped while it was paused: say thank you now instead.
+      await db.from("review_requests").update({ stage: "tapped" }).eq("id", r.id);
+      followupAt = await queueJob(db, b, r.id, "send_thanks", 0);
+    } else {
+      await db.from("review_requests").update({ stage: "replied" }).eq("id", r.id);
+      followupAt = await queueJob(db, b, r.id, "send_followup", 0);
+    }
+  }
+  return { followupAt };
 }

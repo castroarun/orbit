@@ -69,12 +69,12 @@ export const STARTERS: Starter[] = [
   {
     id: "complaint_checkback",
     group: "Review engine",
-    label: "Complaint check-back",
-    hint: "After the owner calls back about a complaint. Same review link, whatever their answer.",
+    label: "Apology after a complaint",
+    hint: "Sent once a complaint is marked resolved. Apologises again and offers the same review link, whatever happened.",
     name: "complaint_checkback",
     category: "UTILITY",
     headerType: "NONE",
-    body: "Hi {{1}}, this is {{2}}. Is everything sorted now after our call? If you'd like to share your experience, here is the link: {{3}}\n\nThank you for giving us the chance to put it right.",
+    body: "Hi {{1}}, this is {{2}}. We're sorry again for the trouble, and thank you for telling us. If you'd like to share your experience, here is the link: {{3}}\n\nThank you for giving us the chance to put it right.",
     examples: ["Priya", "Ravi", "https://example.com/r/k7f2"],
   },
   {

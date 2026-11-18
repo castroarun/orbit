@@ -5,13 +5,14 @@
  */
 import { firstName } from "./timing";
 
-export type Step = "checkin" | "review_link" | "reminder" | "thanks";
+export type Step = "checkin" | "review_link" | "reminder" | "thanks" | "followup";
 
 export const STEP_TEMPLATE: Record<Step, string> = {
   checkin: "visit_checkin",       // Hi {{1}}, this is {{2}} from {{3}}…
   review_link: "review_request",  // Thank you, {{1}}! … experience of {{2}} … {{3}}=link
   reminder: "review_reminder",    // Hi {{1}}, a gentle reminder … {{2}} … {{3}}=link
   thanks: "review_thanks",        // Thank you, {{1}}! … See you again soon at {{2}}…
+  followup: "complaint_checkback", // Hi {{1}}, this is {{2}}. Sorry again … {{3}}=link
 };
 
 export function stepParams(
@@ -28,6 +29,9 @@ export function stepParams(
       return [who, ctx.businessName, ctx.link];
     case "thanks":
       return [who, ctx.businessName];
+    case "followup":
+      if (!ctx.link) throw new Error("No review link for this step");
+      return [who, ctx.ownerFirstName?.trim() || `the team at ${ctx.businessName}`, ctx.link];
   }
 }
 
@@ -67,4 +71,5 @@ export const TEST_STANDINS: Record<Step, { name: string; params: (ctx: { custome
   review_link: { name: "jaspers_market_order_confirmation_v1", params: (c) => [firstName(c.customerName), c.link ?? "", c.businessName] },
   reminder: { name: "jaspers_market_order_confirmation_v1", params: (c) => [firstName(c.customerName), c.link ?? "", c.businessName] },
   thanks: { name: "jaspers_market_plain_text_v1", params: () => [] },
+  followup: { name: "jaspers_market_order_confirmation_v1", params: (c) => [firstName(c.customerName), c.link ?? "", c.businessName] },
 };

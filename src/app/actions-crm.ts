@@ -12,7 +12,7 @@ import { CONSENT_SOURCES, type ConsentSource } from "@/lib/consent";
 import type { CleanRow } from "@/lib/import-check";
 import { todayIST } from "@/lib/dates";
 import { normalizePhone } from "@/lib/phone";
-import { runDueJobs, startReviewRequest } from "@/lib/sequence/engine";
+import { handleCustomerReply, resolveComplaint, runDueJobs, startReviewRequest } from "@/lib/sequence/engine";
 import { currentProfile, supabaseAdmin, supabaseForUser } from "@/lib/supabase/server";
 import { makeIngestKey, parseIncomingVisit } from "@/lib/visits-in";
 import { recordIncomingVisit } from "@/lib/sequence/incoming";
@@ -379,6 +379,54 @@ export async function runDueNow(form: FormData) {
   const failed = results.filter((r) => r.outcome.startsWith("failed"));
   const msg = results.length ? `Ran ${results.length} step(s)${failed.length ? `, ${failed.length} failed: ${failed[0].outcome.slice(8)}` : ""}` : "Nothing was due yet";
   redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${new URLSearchParams(failed.length ? { error: msg } : { ok: msg })}`);
+}
+
+/**
+ * Test mode only: acts as if the customer wrote this on WhatsApp. Needed because
+ * Meta doesn't deliver real replies to an unpublished app.
+ */
+export async function simulateReply(form: FormData) {
+  await requireAgency();
+  const customerId = str(form, "customer_id");
+  const businessId = str(form, "business_id");
+  const text = str(form, "text");
+  const supabase = await supabaseForUser();
+  const { data: b } = await supabase.from("businesses").select("test_mode, test_phone").eq("id", businessId).maybeSingle();
+  if (!b?.test_mode || !b.test_phone) back("/customers", { b: businessId, c: customerId, error: "Only for businesses in test mode" });
+  if (!text) back("/customers", { b: businessId, c: customerId, error: "Type the customer's message first" });
+  const { data: rr } = await supabase.from("review_requests").select("id").eq("customer_id", customerId).order("started_at", { ascending: false }).limit(1).maybeSingle();
+  if (!rr) back("/customers", { b: businessId, c: customerId, error: "Start review messages first" });
+  const result = await handleCustomerReply(
+    { from: b!.test_phone!, text, messageType: "text", waMessageId: `test-${crypto.randomUUID()}`, timestamp: new Date() },
+    rr!.id,
+  );
+  revalidatePath("/", "layout");
+  back("/customers", {
+    b: businessId,
+    c: customerId,
+    ok: !result.matched ? "No recent review request to reply to" : result.kind === "ack" ? "Read as a simple okay" : "Read as needing the owner: review messages paused",
+  });
+}
+
+/** Marks a complaint resolved; paused review messages resume with one apology message. */
+export async function resolveCase(form: FormData) {
+  const profile = await requireAgency();
+  const caseId = str(form, "case_id");
+  const customerId = str(form, "customer_id");
+  const businessId = str(form, "business_id");
+  // The person must be able to see this complaint before the engine acts on it.
+  const supabase = await supabaseForUser();
+  const { data: seen } = await supabase.from("cases").select("id").eq("id", caseId).maybeSingle();
+  if (!seen) back("/customers", { b: businessId, c: customerId, error: "Complaint not found" });
+  const result = await resolveComplaint(caseId, profile.id, str(form, "note") || null);
+  if ("error" in result) back("/customers", { b: businessId, c: customerId, error: result.error });
+  await runDueJobs(); // send the apology now if it's allowed now
+  revalidatePath("/", "layout");
+  back("/customers", {
+    b: businessId,
+    c: customerId,
+    ok: result.followupAt ? "Marked resolved. The apology message with the review link is on its way." : "Marked resolved.",
+  });
 }
 
 // ───────── connections ─────────

@@ -29,7 +29,9 @@ The database schema already covers all of module 1 (the review engine), so stage
 | Ground rules: consent, STOP, quiet hours 20:00–9:00 | `src/lib/messaging/rules.ts` |
 | Meta Graph API, templates, webhook parsing, signature check | `src/lib/meta/` |
 | Send + log in one call | `src/lib/send.ts` |
-| Database schema with row-level security | `supabase/migrations/` (run in order: 0001 to 0005) |
+| Database schema with row-level security | `supabase/migrations/` (run in order: 0001 to 0006) |
+| Which customer replies count as a simple okay vs. needing the owner | `src/lib/sequence/reply.ts` (word list; tested in `reply.test.ts`) |
+| Wording of the apology after a complaint | `src/lib/template-starters.ts` (`complaint_checkback`) |
 | Login gate (Next 16 `proxy.ts`, formerly middleware) | `src/proxy.ts` |
 
 ### Where do I change X
@@ -57,7 +59,7 @@ Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta What
 ### 1. Supabase
 All of Orbit's tables live in their own **`orbit` schema**, so Orbit can share a Supabase project with another app. For now it shares "castroarun's Project" (Mumbai) and never touches that app's `public` tables.
 
-1. In **SQL Editor**, paste and run each file in `supabase/migrations/` in order (0001 to 0005). All are safe to re-run except 0001.
+1. In **SQL Editor**, paste and run each file in `supabase/migrations/` in order (0001 to 0006). All are safe to re-run except 0001.
 2. In **Integrations → Data API → Settings → Exposed schemas**, tick `orbit` and save.
 3. Add yourself as a login under **Authentication → Users → Add user**. If you already have a login in that project, reuse it.
 4. Give yourself agency access (SQL Editor). Logins without a row in `orbit.profiles` can't see anything in Orbit, so the other app's users are locked out automatically:

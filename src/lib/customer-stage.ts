@@ -9,6 +9,7 @@ export type StageInfo = { key: StageKey; label: string; tone: Tone };
 
 export type StageKey =
   | "stopped"
+  | "needs_owner"
   | "no_consent"
   | "new"
   | "waiting_reply"
@@ -19,6 +20,7 @@ export type StageKey =
 
 export const STAGE_FILTERS: { key: StageKey | "all"; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "needs_owner", label: "Needs owner" },
   { key: "new", label: "Not messaged yet" },
   { key: "waiting_reply", label: "Waiting for reply" },
   { key: "not_tapped", label: "Not tapped yet" },
@@ -34,6 +36,7 @@ export function customerStage(
   if (c.opted_out_at) return { key: "stopped", label: "Asked to stop", tone: "neu" };
   if (!c.consent_at) return { key: "no_consent", label: "No consent, saved only", tone: "neu" };
   if (!latest) return { key: "new", label: "Not messaged yet", tone: "neu" };
+  if (latest.stage === "on_hold") return { key: "needs_owner", label: "Needs owner", tone: "bad" };
   if (latest.link_tapped_at || latest.stage === "tapped" || latest.stage === "thanked")
     return { key: "tapped", label: "Tapped link", tone: "ok" };
   switch (latest.stage) {
@@ -47,6 +50,8 @@ export function customerStage(
       return { key: "not_tapped", label: "Not tapped yet", tone: "wait" };
     case "reminder_sent":
       return { key: "reminded", label: "Reminder sent", tone: "neu" };
+    case "followup_sent":
+      return { key: "not_tapped", label: "Apology sent, not tapped", tone: "wait" };
     default:
       return { key: "done", label: "Finished", tone: "neu" };
   }
@@ -63,11 +68,12 @@ export const STEP_LABELS = {
   send_review_link: "Review link",
   send_reminder: "Reminder",
   send_thanks: "Thank-you",
+  send_followup: "Apology with review link",
   expire: "Close the request",
 } as const;
 
 /** Stages in which messages are still going out (screens refresh themselves). */
-export const RUNNING_STAGES = ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped"];
+export const RUNNING_STAGES = ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped", "followup_sent", "on_hold"];
 
 /** "Step 2 of 3"-style position for the list: check-in → review link → reminder/thank-you. */
 export function stepPosition(stage: string): string | null {
@@ -85,6 +91,10 @@ export function stepPosition(stage: string): string | null {
     case "tapped":
     case "thanked":
       return "Done: tapped";
+    case "on_hold":
+      return "Paused: customer wrote back";
+    case "followup_sent":
+      return "Apology sent after complaint";
     default:
       return null;
   }

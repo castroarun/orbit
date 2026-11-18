@@ -171,6 +171,13 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                         <td className="whitespace-nowrap">
                           {(() => {
                             const n = c.review_requests[0] ? nextByRequest.get(c.review_requests[0].id) : undefined;
+                            if (c.review_requests[0]?.stage === "on_hold")
+                              return (
+                                <>
+                                  <span className="font-medium text-[#9f1d1d]">Owner to reply</span>
+                                  <div className="hint">then mark resolved</div>
+                                </>
+                              );
                             return n ? (
                               <>
                                 {STEP_LABELS[n.type as keyof typeof STEP_LABELS] ?? n.type}
