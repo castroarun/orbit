@@ -55,3 +55,16 @@ export function pickTemplate<T extends { name: string; language: string; status:
     approved[0]
   );
 }
+
+/**
+ * Test mode only, while our own templates await Meta approval: Meta's sample
+ * templates, which every test account has pre-approved. The wording is Meta's,
+ * but timing, tracked links, taps and the thank-you are all real.
+ * jaspers_market_order_confirmation_v1: "Hi {{1}}, … Your order number is {{2}}. … Estimated delivery: {{3}}."
+ */
+export const TEST_STANDINS: Record<Step, { name: string; params: (ctx: { customerName: string | null; businessName: string; link: string | null }) => string[] }> = {
+  checkin: { name: "hello_world", params: () => [] },
+  review_link: { name: "jaspers_market_order_confirmation_v1", params: (c) => [firstName(c.customerName), c.link ?? "", c.businessName] },
+  reminder: { name: "jaspers_market_order_confirmation_v1", params: (c) => [firstName(c.customerName), c.link ?? "", c.businessName] },
+  thanks: { name: "jaspers_market_plain_text_v1", params: () => [] },
+};

@@ -14,7 +14,7 @@ import { ensureSandboxBusiness } from "../sandbox";
 import { sendMessage } from "../send";
 import { supabaseAdmin } from "../supabase/server";
 import { STARTERS } from "../template-starters";
-import { pickTemplate, replyLinkText, STEP_TEMPLATE, stepParams, type Step } from "./messages";
+import { pickTemplate, replyLinkText, STEP_TEMPLATE, stepParams, TEST_STANDINS, type Step } from "./messages";
 import { delaysFor, isPreviewBot, makeLinkCode, nextAllowedTime, REASK_AFTER_DAYS, type Quiet } from "./timing";
 
 type Db = ReturnType<typeof supabaseAdmin>;
@@ -67,7 +67,9 @@ export function sequenceReadiness(b: Pick<Business, "test_mode" | "test_phone" |
 }
 
 async function queueJob(db: Db, b: Business, requestId: string, type: JobType, delayMs: number) {
-  const runAt = nextAllowedTime(new Date(Date.now() + delayMs), quietOf(b));
+  const due = new Date(Date.now() + delayMs);
+  // Test mode messages go to our own phone, so they may run at night too.
+  const runAt = b.test_mode ? due : nextAllowedTime(due, quietOf(b));
   const { error } = await db.from("jobs").insert({
     business_id: b.id,
     review_request_id: requestId,
@@ -184,21 +186,26 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
   if ((step === "review_link" || step === "reminder") && rr.link_tapped_at) return "skipped";
   if (step === "review_link" && rr.stage !== "checkin_sent") return "skipped"; // already sent after a reply
 
-  const quiet = quietOf(b);
-  const allowedAt = nextAllowedTime(new Date(), quiet);
-  if (allowedAt.getTime() > Date.now()) return { retryAt: allowedAt, reason: "Quiet hours" };
+  if (!b.test_mode) {
+    const allowedAt = nextAllowedTime(new Date(), quietOf(b));
+    if (allowedAt.getTime() > Date.now()) return { retryAt: allowedAt, reason: "Quiet hours" };
+  }
 
   const ch = await channelFor(b, c.phone);
   const { data: templates } = await db.from("templates").select("name, language, status, body").eq("business_id", ch.templateOwnerId);
-  const template = pickTemplate(templates ?? [], step, c.language);
-  // Test mode only: until Meta approves the template, send the same wording as a plain
-  // message. WhatsApp allows that only if the test phone messaged our number in the last
-  // 24 hours; otherwise Meta refuses and the step shows why.
+  const own = pickTemplate(templates ?? [], step, c.language);
+  const link = step === "review_link" || step === "reminder" ? await ensureLink(db, b, rr.id) : null;
+  const ctx = { customerName: c.name, ownerFirstName: b.owner_first_name, businessName: b.name, link };
+
+  // Test mode, own template not approved yet: use Meta's pre-approved sample instead
+  // (Meta's wording, our timing and link). Otherwise the same wording as a plain
+  // message, which WhatsApp only delivers within 24 h of the tester messaging us.
+  const standin = !own && b.test_mode ? (templates ?? []).find((t) => t.name === TEST_STANDINS[step].name && t.status === "APPROVED") : undefined;
+  const template = own ?? standin;
+  const params = own ? stepParams(step, ctx) : standin ? TEST_STANDINS[step].params(ctx) : stepParams(step, ctx);
   const fallbackBody = b.test_mode && !template ? STARTERS.find((t) => t.name === STEP_TEMPLATE[step])?.body : undefined;
   if (!template && !fallbackBody) return { failed: `Template "${STEP_TEMPLATE[step]}" isn't approved by Meta yet` };
 
-  const link = step === "review_link" || step === "reminder" ? await ensureLink(db, b, rr.id) : null;
-  const params = stepParams(step, { customerName: c.name, ownerFirstName: b.owner_first_name, businessName: b.name, link });
   const result = await sendMessage({
     business: ch.sender,
     message: template
@@ -208,11 +215,14 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
           templateName: template.name,
           language: template.language,
           bodyParams: params,
-          previewText: fillBlanks(template.body, params),
+          previewText: standin
+            ? `[Test stand-in for ${STEP_TEMPLATE[step]}] ${fillBlanks(template.body, params)}`
+            : fillBlanks(template.body, params),
         }
       : { kind: "text", to: ch.to, text: fillBlanks(fallbackBody!, params) },
     customerId: c.id,
     reviewRequestId: rr.id,
+    toTestPhone: b.test_mode,
   });
   if (result.status === "failed") {
     if (!template && result.code === 131047)
@@ -339,6 +349,7 @@ export async function onCustomerReply(fromPhone: string): Promise<boolean> {
     message: { kind: "text", to: ch.to, text: replyLinkText({ customerName: c.name, businessName: b.name, link }) },
     customerId: c.id,
     reviewRequestId: match.id,
+    toTestPhone: b.test_mode,
   });
   if (result.status === "failed") {
     // Fall back to the template a minute later.

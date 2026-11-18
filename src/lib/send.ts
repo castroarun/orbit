@@ -24,6 +24,8 @@ export async function sendMessage(opts: {
   customerId?: string;
   reviewRequestId?: string;
   sentBy?: string;
+  /** Test mode: the message goes to our own test phone, so quiet hours don't apply (consent and STOP still do). */
+  toTestPhone?: boolean;
 }): Promise<SendResult> {
   const { business, message } = opts;
   const db = supabaseAdmin();
@@ -34,13 +36,19 @@ export async function sendMessage(opts: {
       .select("consent_at, opted_out_at")
       .eq("id", opts.customerId)
       .single();
-    const check = customer
-      ? canMessageCustomer(customer, new Date(), {
+    const check = !customer
+      ? ({ ok: false, reason: "Customer not found" } as const)
+      : opts.toTestPhone
+        ? customer.opted_out_at
+          ? ({ ok: false, reason: "Customer asked to stop" } as const)
+          : !customer.consent_at
+            ? ({ ok: false, reason: "No consent recorded" } as const)
+            : ({ ok: true } as const)
+        : canMessageCustomer(customer, new Date(), {
           start: business.quiet_start,
           end: business.quiet_end,
           timeZone: business.timezone,
-        })
-      : ({ ok: false, reason: "Customer not found" } as const);
+        });
     if (!check.ok) return { status: "failed", mode: business.messaging_mode, error: check.reason };
   }
 

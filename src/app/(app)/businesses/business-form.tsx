@@ -138,7 +138,7 @@ export function BusinessForm({ business }: { business?: BusinessRow }) {
             Test mode: send every message to the test phone below instead of the customer
             <span className="hint block">
               Uses our Meta test number, and waits are minutes instead of hours (check-in after 1 min, review link 2 min later,
-              reminder 3 min after that). Turn off before real customers.
+              reminder 3 min after that) and quiet hours are skipped. Until our own templates are approved, Meta's pre-approved sample messages stand in. Turn off before real customers.
             </span>
           </span>
         </label>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickTemplate, replyLinkText, stepParams } from "./messages";
+import { pickTemplate, replyLinkText, stepParams, TEST_STANDINS } from "./messages";
 import { DELAYS, firstName, isPreviewBot, makeLinkCode, nextAllowedTime } from "./timing";
 
 const quiet = { start: "20:00", end: "09:00", timeZone: "Asia/Kolkata" };
@@ -52,5 +52,14 @@ describe("messages", () => {
     expect(pickTemplate(t, "review_link", "ta")?.language).toBe("en");
     expect(pickTemplate(t, "checkin", "en")?.language).toBe("en_US");
     expect(pickTemplate(t, "thanks", "en")).toBeUndefined();
+  });
+});
+
+describe("test stand-ins", () => {
+  it("put the tracked link where Meta's sample has a blank", () => {
+    const ctx = { customerName: "Meena T", businessName: "Demo Bakery", link: "https://x.app/r/abc234" };
+    expect(TEST_STANDINS.checkin.params(ctx)).toEqual([]);
+    expect(TEST_STANDINS.review_link.params(ctx)).toEqual(["Meena", "https://x.app/r/abc234", "Demo Bakery"]);
+    expect(TEST_STANDINS.thanks.name).toBe("jaspers_market_plain_text_v1");
   });
 });
