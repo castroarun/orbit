@@ -13,6 +13,7 @@ import { fillBlanks } from "../meta/template-view";
 import { ensureSandboxBusiness } from "../sandbox";
 import { sendMessage } from "../send";
 import { supabaseAdmin } from "../supabase/server";
+import { STARTERS } from "../template-starters";
 import { pickTemplate, replyLinkText, STEP_TEMPLATE, stepParams, type Step } from "./messages";
 import { delaysFor, isPreviewBot, makeLinkCode, nextAllowedTime, REASK_AFTER_DAYS, type Quiet } from "./timing";
 
@@ -190,24 +191,34 @@ async function runJob(db: Db, job: { id: number; type: JobType; review_request_i
   const ch = await channelFor(b, c.phone);
   const { data: templates } = await db.from("templates").select("name, language, status, body").eq("business_id", ch.templateOwnerId);
   const template = pickTemplate(templates ?? [], step, c.language);
-  if (!template) return { failed: `Template "${STEP_TEMPLATE[step]}" isn't approved by Meta yet` };
+  // Test mode only: until Meta approves the template, send the same wording as a plain
+  // message. WhatsApp allows that only if the test phone messaged our number in the last
+  // 24 hours; otherwise Meta refuses and the step shows why.
+  const fallbackBody = b.test_mode && !template ? STARTERS.find((t) => t.name === STEP_TEMPLATE[step])?.body : undefined;
+  if (!template && !fallbackBody) return { failed: `Template "${STEP_TEMPLATE[step]}" isn't approved by Meta yet` };
 
   const link = step === "review_link" || step === "reminder" ? await ensureLink(db, b, rr.id) : null;
   const params = stepParams(step, { customerName: c.name, ownerFirstName: b.owner_first_name, businessName: b.name, link });
   const result = await sendMessage({
     business: ch.sender,
-    message: {
-      kind: "template",
-      to: ch.to,
-      templateName: template.name,
-      language: template.language,
-      bodyParams: params,
-      previewText: fillBlanks(template.body, params),
-    },
+    message: template
+      ? {
+          kind: "template",
+          to: ch.to,
+          templateName: template.name,
+          language: template.language,
+          bodyParams: params,
+          previewText: fillBlanks(template.body, params),
+        }
+      : { kind: "text", to: ch.to, text: fillBlanks(fallbackBody!, params) },
     customerId: c.id,
     reviewRequestId: rr.id,
   });
-  if (result.status === "failed") return { failed: result.error };
+  if (result.status === "failed") {
+    if (!template && result.code === 131047)
+      return { failed: `Template "${STEP_TEMPLATE[step]}" isn't approved yet, and the plain-message stand-in needs you to send "hi" to the test number first (opens WhatsApp's 24-hour window)` };
+    return { failed: result.error };
+  }
 
   const now = new Date().toISOString();
   const d = delaysFor(b.test_mode);
@@ -252,6 +263,9 @@ export async function runDueJobs(limit = 25) {
       await db.from("jobs").update({ state: "done", last_error: outcome === "skipped" ? "skipped" : null }).eq("id", job.id);
     } else if ("retryAt" in outcome) {
       await db.from("jobs").update({ state: "queued", run_at: outcome.retryAt.toISOString(), last_error: outcome.reason }).eq("id", job.id);
+    } else if (/send "hi"/.test(outcome.failed) && job.attempts + 1 < 15) {
+      // Test mode waiting for the tester to open the 24-hour window: try again every minute.
+      await db.from("jobs").update({ state: "queued", run_at: new Date(Date.now() + 60_000).toISOString(), last_error: outcome.failed }).eq("id", job.id);
     } else if (job.attempts + 1 < 3 && !/isn't approved/.test(outcome.failed)) {
       await db.from("jobs").update({ state: "queued", run_at: new Date(Date.now() + 5 * 60_000).toISOString(), last_error: outcome.failed }).eq("id", job.id);
     } else {
