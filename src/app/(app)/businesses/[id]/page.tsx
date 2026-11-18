@@ -89,7 +89,7 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
 
       {missing.length ? (
         <div className="mb-6 rounded-lg border border-[#f0ddbb] bg-[#fbf3e6] px-4 py-3 text-sm text-[#8a3b0a]">
-          Still needed before review requests can start: {missing.join(", ")}.{" "}
+          Still to add: {missing.join(", ")}.{" "}
           <Link href={`/businesses/${b.id}/edit`} className="font-medium underline">
             Add them
           </Link>

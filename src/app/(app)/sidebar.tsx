@@ -72,7 +72,7 @@ function NavLinks({ items, counts }: { items: NavItem[]; counts: Record<string, 
             key={n.href}
             href={n.href}
             aria-current={on ? "page" : undefined}
-            className={`flex items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-[13.5px] no-underline ${
+            className={`flex flex-none items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-[13.5px] whitespace-nowrap no-underline ${
               on ? "bg-selected font-medium text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"
             }`}
           >
@@ -87,26 +87,32 @@ function NavLinks({ items, counts }: { items: NavItem[]; counts: Record<string, 
 }
 
 export function Sidebar({ counts, signOut }: { counts: Record<string, number>; signOut: () => Promise<void> }) {
+  // Desktop: a fixed column. Phone: brand + sign out on one line, then the menu as one swipeable strip.
   return (
-    <aside className="flex w-full flex-col gap-[18px] border-b border-line bg-side px-3 py-[18px] md:sticky md:top-0 md:h-screen md:w-[232px] md:flex-none md:border-r md:border-b-0">
+    <aside className="flex w-full flex-col gap-3 border-b border-line bg-side px-3 pt-3 pb-2 md:sticky md:top-0 md:h-screen md:w-[232px] md:flex-none md:gap-[18px] md:border-r md:border-b-0 md:py-[18px]">
       <div className="flex items-center gap-2.5 px-2 text-[15px] font-semibold tracking-[-0.01em]">
         <span className="relative inline-block h-5 w-5 flex-none rounded-md bg-ink" aria-hidden="true">
           <span className="absolute top-[5px] left-[5px] h-[5px] w-1.5 rounded-b-md border-2 border-t-0 border-white" />
         </span>
         Orbit
+        <form action={signOut} className="ml-auto md:hidden">
+          <button className="cursor-pointer text-[13px] font-normal text-muted hover:text-ink">Sign out</button>
+        </form>
       </div>
-      <div className="flex flex-col rounded-lg border border-line bg-white px-2.5 py-2 text-[13px]">
+      <div className="hidden flex-col rounded-lg border border-line bg-white px-2.5 py-2 text-[13px] md:flex">
         <span className="text-[11.5px] text-muted">Agency</span>
         <span>AS Groups · Digital Marketing</span>
       </div>
-      <nav aria-label="Main" className="flex flex-col gap-0.5">
-        <NavLinks items={NAV_MAIN} counts={counts} />
-      </nav>
-      <nav aria-label="Meta test tools" className="flex flex-col gap-0.5">
-        <div className="px-2.5 pb-1 text-[11.5px] font-medium tracking-wide text-muted uppercase">Meta test tools</div>
-        <NavLinks items={NAV_TOOLS} counts={counts} />
-      </nav>
-      <form action={signOut} className="mt-auto px-2.5">
+      <div className="-mx-3 flex gap-0.5 overflow-x-auto px-3 pb-1 md:mx-0 md:flex-col md:gap-[18px] md:overflow-visible md:px-0 md:pb-0">
+        <nav aria-label="Main" className="flex flex-none gap-0.5 md:flex-col">
+          <NavLinks items={NAV_MAIN} counts={counts} />
+        </nav>
+        <nav aria-label="Meta test tools" className="flex flex-none gap-0.5 border-l border-line pl-1 md:flex-col md:border-l-0 md:pl-0">
+          <div className="hidden px-2.5 pb-1 text-[11.5px] font-medium tracking-wide text-muted uppercase md:block">Meta test tools</div>
+          <NavLinks items={NAV_TOOLS} counts={counts} />
+        </nav>
+      </div>
+      <form action={signOut} className="mt-auto hidden px-2.5 md:block">
         <button className="cursor-pointer text-[13px] text-muted hover:text-ink">Sign out</button>
       </form>
     </aside>

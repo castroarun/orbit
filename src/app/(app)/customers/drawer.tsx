@@ -20,7 +20,7 @@ type Customer = {
   stage: StageInfo;
 };
 
-type Event = { at: string; title: string; detail?: string; body?: string | null; dir?: "in" | "out"; tone: "grey" | "blue" | "green" };
+type Event = { at: string; dateOnly?: boolean; title: string; detail?: string; body?: string | null; dir?: "in" | "out"; tone: "grey" | "blue" | "green" };
 
 const VISIT_SOURCE: Record<string, string> = { staff: "Marked by staff", import: "From imported list", billing: "From billing", manual: "Added by hand" };
 
@@ -42,7 +42,7 @@ export async function CustomerDrawer({ businessId, customer: c, closeHref }: { b
     { at: c.created_at, title: "Added to the customer list", tone: "grey" as const },
     ...(c.consent_at ? [{ at: c.consent_at, title: "Agreed to WhatsApp messages", detail: c.consentLabel, tone: "green" as const }] : []),
     ...(c.opted_out_at ? [{ at: c.opted_out_at, title: "Asked to stop messages", detail: "Never messaged again", tone: "grey" as const }] : []),
-    ...visits.map((v) => ({ at: v.visited_at, title: "Visit", detail: VISIT_SOURCE[v.source] ?? v.source, tone: "grey" as const })),
+    ...visits.map((v) => ({ at: v.visited_at, dateOnly: true, title: "Visit", detail: VISIT_SOURCE[v.source] ?? v.source, tone: "grey" as const })),
     ...messages.map((m) => ({
       at: m.created_at,
       title: m.direction === "in" ? "Customer replied" : m.template_name ? `Sent “${m.template_name}”` : "Message sent",
@@ -81,7 +81,7 @@ export async function CustomerDrawer({ businessId, customer: c, closeHref }: { b
       <ol className="px-[18px] pt-3.5 pb-1.5">
         {events.map((e, i) => (
           <li key={i} className="grid grid-cols-[64px_14px_minmax(0,1fr)] gap-2.5 pb-3.5">
-            <span className="hint pt-px">{when(e.at)}</span>
+            <span className="hint pt-px">{when(e.at, !e.dateOnly)}</span>
             <span className="relative flex justify-center">
               {i < events.length - 1 ? <span className="absolute top-3.5 -bottom-3.5 w-px bg-line" aria-hidden /> : null}
               <span
