@@ -64,7 +64,7 @@ export async function sendTest(form: FormData) {
   const business = await ensureSandboxBusiness();
 
   const phone = normalizePhone(str(form, "to"));
-  if (!phone.ok) back("/", { error: `Phone number: ${phone.reason}` });
+  if (!phone.ok) back("/send", { error: `Phone number: ${phone.reason}` });
   const to = (phone as { phone: string }).phone;
 
   const kind = str(form, "kind");
@@ -83,12 +83,12 @@ export async function sendTest(form: FormData) {
       .eq("language", language)
       .maybeSingle();
     const view = templateView(t?.components, t?.body ?? "");
-    if (!view.sendable) back("/", { error: view.reason ?? "This template can't be sent from here yet" });
+    if (!view.sendable) back("/send", { error: view.reason ?? "This template can't be sent from here yet" });
 
     // One box per {{n}} blank: param_1, param_2, …
     const params = Array.from({ length: view.blanks }, (_, i) => str(form, `param_${i + 1}`));
     const missing = params.findIndex((p) => !p);
-    if (missing >= 0) back("/", { error: `Fill in {{${missing + 1}}} before sending` });
+    if (missing >= 0) back("/send", { error: `Fill in {{${missing + 1}}} before sending` });
 
     const preview = [
       view.header?.kind === "text" ? view.header.text : "",
@@ -103,12 +103,12 @@ export async function sendTest(form: FormData) {
       const file = form.get("header_image") as File | null;
       if (file && file.size > 0) {
         const problem = checkImage(file);
-        if (problem) back("/", { error: problem });
+        if (problem) back("/send", { error: problem });
         headerImageUrl = await storePublicImage(business.id, file);
       } else {
         headerImageUrl = view.header.sampleUrl;
       }
-      if (!headerImageUrl) back("/", { error: "This template needs a picture: choose one for this send" });
+      if (!headerImageUrl) back("/send", { error: "This template needs a picture: choose one for this send" });
     }
 
     message = {
@@ -124,9 +124,9 @@ export async function sendTest(form: FormData) {
 
   const result = await sendMessage({ business: { ...business, messaging_mode: mode }, message, sentBy: profile.id });
   revalidatePath("/messages");
-  if (result.status === "sent") back("/", { ok: "sent" });
-  if (result.status === "link") back("/", { link: result.link });
-  back("/", { error: (result as { error: string }).error });
+  if (result.status === "sent") back("/send", { ok: "sent" });
+  if (result.status === "link") back("/send", { link: result.link });
+  back("/send", { error: (result as { error: string }).error });
 }
 
 // ───────── templates (App Review video 2) ─────────

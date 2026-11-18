@@ -2,9 +2,16 @@
 
 Internal platform behind **AS Groups · Digital Marketing**. "Orbit" is an internal name only; client-facing material says "our own platform".
 
-This repo is **stage 1: the approval kit**. It's the bare minimum Meta needs to see before approving us as a WhatsApp Tech Provider:
+**Stage 2 (in progress): the review engine.** Screens follow the frozen app mockup:
 
-- **Send test** (`/`): sends a WhatsApp message from Meta's free test number (App Review video 1). It can also produce a one-tap wa.me link, which is the pilot mode.
+- **Overview** (`/`): every client business with customers, requests and taps this month, plus what needs attention. All counted from the database.
+- **Businesses** (`/businesses`): add and edit clients (area, type, owner's WhatsApp for complaint alerts, Google review link, Place ID, languages, status, plan).
+- **Customers** (`/customers?b=<business>`): search, stage filters, add a customer (consent is a separate unticked box), and a side panel with the customer's story, Record a visit, Record consent, Stop all messages.
+- **Import** (`/import?b=<business>`): Excel (.xlsx) or CSV; columns matched from the headings; checks numbers (+91 added), duplicates, invalid numbers, future dates and consent before saving. Existing customers are filled in, never overwritten. Nothing is sent.
+
+**Stage 1: the approval kit** (under "Meta test tools" in the sidebar). The bare minimum Meta needs to see before approving us as a WhatsApp Tech Provider:
+
+- **Send test** (`/send`): sends a WhatsApp message from Meta's free test number (App Review video 1). It can also produce a one-tap wa.me link, which is the pilot mode.
 - **Templates** (`/templates`): creates a message template and submits it to Meta, then shows its approval status (App Review video 2).
 - **Messages** (`/messages`): everything sent and received, with delivery ticks. Replies arrive through the webhook.
 - **Webhook** (`/api/webhooks/meta`): checks Meta's signature, stores incoming messages and delivery statuses, records template approvals, and handles STOP / வேண்டாம்.
@@ -20,8 +27,21 @@ The database schema already covers all of module 1 (the review engine), so stage
 | Ground rules: consent, STOP, quiet hours 20:00–9:00 | `src/lib/messaging/rules.ts` |
 | Meta Graph API, templates, webhook parsing, signature check | `src/lib/meta/` |
 | Send + log in one call | `src/lib/send.ts` |
-| Database schema with row-level security | `supabase/migrations/0001_module1.sql` |
+| Database schema with row-level security | `supabase/migrations/` (run in order: 0001, 0002, 0003) |
 | Login gate (Next 16 `proxy.ts`, formerly middleware) | `src/proxy.ts` |
+
+### Where do I change X
+
+| Change | File |
+|---|---|
+| Colours, fonts, radii, buttons, pills | `src/app/globals.css` (tokens at the top) |
+| Sidebar menu (add or rename a screen) | `src/lib/nav.ts` |
+| Business form rules, review-link logic, "missing setup" list | `src/lib/business.ts` |
+| Consent wording ("Said yes at billing"…) | `src/lib/consent.ts` |
+| Customer stage names and filters | `src/lib/customer-stage.ts` |
+| Import column guesses, date/number/consent reading | `src/lib/import-check.ts` |
+| Saving businesses, customers, visits, imports | `src/app/actions-crm.ts` |
+| Stage-1 Meta actions (send, templates) | `src/app/actions.ts` |
 
 Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta WhatsApp Cloud API with the Graph API version pinned in `GRAPH_API_VERSION`.
 
@@ -30,7 +50,7 @@ Stack: Next.js 16 on Vercel, Supabase (Postgres, login, access rules), Meta What
 ### 1. Supabase
 All of Orbit's tables live in their own **`orbit` schema**, so Orbit can share a Supabase project with another app. For now it shares "castroarun's Project" (Mumbai) and never touches that app's `public` tables.
 
-1. In **SQL Editor**, paste and run `supabase/migrations/0001_module1.sql`.
+1. In **SQL Editor**, paste and run each file in `supabase/migrations/` in order (0001, 0002, 0003). All are safe to re-run except 0001.
 2. In **Integrations → Data API → Settings → Exposed schemas**, tick `orbit` and save.
 3. Add yourself as a login under **Authentication → Users → Add user**. If you already have a login in that project, reuse it.
 4. Give yourself agency access (SQL Editor). Logins without a row in `orbit.profiles` can't see anything in Orbit, so the other app's users are locked out automatically:
@@ -76,7 +96,7 @@ npm test                     # unit tests
 ```
 
 ## Next stages
-- **Stage 2:** customers, Excel import, tracked short links (`/r/<code>`), daily rating check, the message schedule with one-tap sending, and the counter phone screen.
+- **Stage 2, still to build:** tracked short links (`/r/<code>`), daily rating check, the message schedule with one-tap sending, and the counter phone screen.
 - **Stage 3 (after Meta approval):** Embedded Signup v4 with Coexistence, so clients connect their own number. Automatic sending, complaint detection, check-backs.
 - **Stage 4 (after Google approval):** reviews read in, AI-drafted replies, owner approval.
 

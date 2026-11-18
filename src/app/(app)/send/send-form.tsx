@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { TemplateComponent } from "@/lib/meta/templates";
 import { templateView } from "@/lib/meta/template-view";
-import { WhatsAppBubble } from "./whatsapp-bubble";
-import { sendTest } from "../actions";
+import { WhatsAppBubble } from "../whatsapp-bubble";
+import { sendTest } from "../../actions";
 
 export type TemplateOption = {
   name: string;

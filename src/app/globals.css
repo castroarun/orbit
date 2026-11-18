@@ -1,39 +1,129 @@
 @import "tailwindcss";
 
-/* AS Groups navy and gold as accents on light, roomy screens */
+/*
+ * Design tokens: the one place for colours, fonts and radii.
+ * Taken from the frozen app mockup (warm neutral ground, one blue accent).
+ * Older names (navy, gold) are kept so stage-1 screens follow the new look.
+ */
 @theme inline {
-  --color-navy: #14213d;
-  --color-navy-soft: #e8ecf4;
-  --color-gold: #c9a13b;
-  --color-gold-soft: #f7f0dc;
-  --color-ink: #1c1f26;
-  --color-muted: #6b7280;
-  --color-line: #e6e8ec;
-  --color-canvas: #f7f8fa;
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Tamil", sans-serif;
+  --color-ink: #16181d;        /* text, primary buttons */
+  --color-ink-2: #3a3f48;      /* secondary text */
+  --color-muted: #646a75;      /* hints, labels (passes 4.5:1 on canvas) */
+  --color-line: #e5e3dd;       /* borders */
+  --color-line-soft: #efede8;  /* row dividers */
+  --color-canvas: #f6f5f2;     /* page background */
+  --color-side: #fbfbf9;       /* sidebar */
+  --color-hover: #f0eee9;
+  --color-selected: #ecebe4;
+  --color-accent: #2f55d4;     /* charts, selection */
+  --color-link: #2446c7;
+
+  --color-navy: #16181d;
+  --color-navy-soft: #ecebe4;
+  --color-gold: #8a3b0a;
+  --color-gold-soft: #fbf3e6;
+
+  --font-sans: var(--font-geist), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-tamil: var(--font-noto-tamil), var(--font-geist), sans-serif;
 }
 
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  font-feature-settings: "tnum" 1;
+}
+
+a.link,
+.link {
+  color: var(--color-link);
 }
 
 .card {
-  @apply rounded-2xl border border-line bg-white p-6;
+  @apply rounded-[10px] border border-line bg-white p-6;
 }
 .label {
-  @apply mb-1 block text-sm font-medium text-ink;
+  @apply mb-1 block text-[13px] font-medium text-ink;
 }
 .input {
-  @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-navy;
+  @apply w-full rounded-lg border border-[#dad7d0] bg-white px-3 py-2 text-sm outline-none focus:border-ink;
 }
 .btn {
-  @apply inline-flex items-center justify-center rounded-full bg-navy px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50;
+  @apply inline-flex h-[34px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-ink bg-ink px-[13px] text-[13px] font-medium whitespace-nowrap text-white hover:bg-[#2a2d34] disabled:cursor-default disabled:opacity-50;
 }
+.btn-ghost,
 .btn-gold {
-  @apply inline-flex items-center justify-center rounded-full bg-gold px-5 py-2 text-sm font-medium text-navy hover:opacity-90;
+  @apply inline-flex h-[34px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dad7d0] bg-white px-[13px] text-[13px] font-medium whitespace-nowrap text-ink hover:bg-canvas disabled:cursor-default disabled:opacity-50;
+}
+.btn-danger {
+  @apply inline-flex h-[34px] cursor-pointer items-center justify-center rounded-lg border border-[#f2d0d0] bg-white px-[13px] text-[13px] font-medium text-[#9f1d1d] hover:bg-[#fbeeee];
 }
 .hint {
-  @apply text-xs text-muted;
+  @apply text-[12.5px] text-muted;
+}
+.h1 {
+  @apply text-[22px] font-semibold tracking-[-0.015em];
+}
+.h2 {
+  @apply text-[15px] font-semibold;
+}
+.crumb {
+  @apply text-[13px] text-muted;
+}
+
+/* Tables */
+.tbl {
+  @apply w-full border-collapse text-[13.5px];
+}
+.tbl th {
+  @apply border-b border-line px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted;
+}
+.tbl td {
+  @apply border-b border-line-soft px-4 py-3 align-middle;
+}
+.tbl tr:last-child td {
+  @apply border-b-0;
+}
+
+/* Status pills: colour never carries meaning alone, every pill has a word */
+.pill {
+  @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-px text-xs leading-[18px] whitespace-nowrap;
+}
+.pill::before {
+  content: "";
+  @apply inline-block h-1.5 w-1.5 rounded-full bg-current;
+}
+.pill-ok {
+  @apply border-[#cfe6d3] bg-[#eef6ef] text-[#166534];
+}
+.pill-wait {
+  @apply border-[#f0ddbb] bg-[#fbf3e6] text-[#8a3b0a];
+}
+.pill-info {
+  @apply border-[#d3dcf5] bg-[#eef2fc] text-[#1e3a8a];
+}
+.pill-bad {
+  @apply border-[#f2d0d0] bg-[#fbeeee] text-[#9f1d1d];
+}
+.pill-neu {
+  @apply border-[#e2e0da] bg-[#f1f0ec] text-[#4b5160];
+}
+
+.chip {
+  @apply inline-flex h-[30px] items-center gap-1.5 rounded-full border border-[#dad7d0] bg-white px-3 text-[12.5px] font-medium text-ink-2;
+}
+.chip b {
+  @apply font-medium text-muted;
+}
+.chip.on {
+  @apply border-ink bg-ink text-white;
+}
+.chip.on b {
+  @apply text-[#c9cbd1];
+}
+
+.ta {
+  font-family: var(--font-tamil);
 }
