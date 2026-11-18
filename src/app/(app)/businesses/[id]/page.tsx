@@ -18,6 +18,20 @@ const AUDIT_TEXT: Record<string, (d: Record<string, unknown>) => string> = {
   opted_out: () => "A customer asked to stop messages",
 };
 
+const REQUEST_STAGE: Record<string, string> = {
+  scheduled: "Check-in scheduled",
+  checkin_sent: "Check-in sent",
+  replied: "Replied",
+  no_reply: "No reply",
+  link_sent: "Review link sent",
+  reminder_sent: "Reminder sent",
+  tapped: "Tapped the link",
+  thanked: "Tapped and thanked",
+  stopped: "Stopped",
+  expired: "Closed, no tap",
+};
+const RUNNING = ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped"];
+
 const LANG = { ta: "Tamil", en: "English" } as Record<string, string>;
 const hhmm = (t: string) => t.slice(0, 5);
 
@@ -195,16 +209,19 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
                         {(r.customers as unknown as { name: string | null } | null)?.name ?? "Customer"}
                       </Link>
                       <span className="hint text-right">
-                        {r.stage.replaceAll("_", " ")} · {when(r.started_at)}
+                        {REQUEST_STAGE[r.stage] ?? r.stage} · {when(r.started_at)}
                       </span>
                     </li>
                   ))}
                 </ul>
               ) : null}
-              <form action={runDueNow}>
-                <input type="hidden" name="return_to" value={`/businesses/${b.id}`} />
-                <PendingButton label="Run due steps now" pendingLabel="Running…" className="btn-ghost" />
-              </form>
+              {requests.some((r) => RUNNING.includes(r.stage)) ? (
+                <form action={runDueNow}>
+                  <input type="hidden" name="return_to" value={`/businesses/${b.id}`} />
+                  <PendingButton label="Run due steps now" pendingLabel="Running…" className="btn-ghost" />
+                  <span className="hint ml-2">Sends any step that is due; otherwise they go within a minute.</span>
+                </form>
+              ) : null}
             </div>
           </Section>
 
