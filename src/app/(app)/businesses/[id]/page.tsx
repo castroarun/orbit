@@ -6,6 +6,7 @@ import { sequenceReadiness } from "@/lib/sequence/engine";
 import { runDueNow } from "../../../actions-crm";
 import { PendingButton } from "../../pending-button";
 import { Connections } from "./connections";
+import { AutoRefresh } from "../../auto-refresh";
 import { BUSINESS_COLUMNS, loadAgency, monthStartIST, type BusinessRow } from "@/lib/page-data";
 import { Notice, param } from "../../notice";
 import { PageHeader, Pill, Section, when } from "../../ui";
@@ -196,7 +197,7 @@ export default async function BusinessPage({ params, searchParams }: PageProps<"
         </div>
 
         <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-7">
-          <Section title="Review requests">
+          <Section title="Review requests" aside={<AutoRefresh active={requests.some((r) => RUNNING.includes(r.stage))} />}>
             <div className="card space-y-3 p-4 text-[13.5px]">
               {b.test_mode ? (
                 <div className="pill pill-wait">Test mode: everything goes to {formatPhone(b.test_phone ?? "")}</div>

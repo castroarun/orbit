@@ -56,3 +56,36 @@ export function customerStage(
 export function maskPhone(formatted: string) {
   return formatted.replace(/(\d{3})(?=\d{2}$)/, "•••");
 }
+
+/** The four messages of a review request, in order, for the step tracker. */
+export const STEP_LABELS = {
+  send_checkin: "Check-in",
+  send_review_link: "Review link",
+  send_reminder: "Reminder",
+  send_thanks: "Thank-you",
+  expire: "Close the request",
+} as const;
+
+/** Stages in which messages are still going out (screens refresh themselves). */
+export const RUNNING_STAGES = ["scheduled", "checkin_sent", "replied", "no_reply", "link_sent", "reminder_sent", "tapped"];
+
+/** "Step 2 of 3"-style position for the list: check-in → review link → reminder/thank-you. */
+export function stepPosition(stage: string): string | null {
+  switch (stage) {
+    case "scheduled":
+      return "Step 1 of 3 next";
+    case "checkin_sent":
+    case "replied":
+    case "no_reply":
+      return "1 of 3 sent";
+    case "link_sent":
+      return "2 of 3 sent";
+    case "reminder_sent":
+      return "3 of 3 sent";
+    case "tapped":
+    case "thanked":
+      return "Done: tapped";
+    default:
+      return null;
+  }
+}

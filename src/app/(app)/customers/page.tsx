@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { consentLabel } from "@/lib/consent";
-import { customerStage, maskPhone, STAGE_FILTERS, type StageKey } from "@/lib/customer-stage";
+import { customerStage, maskPhone, RUNNING_STAGES, STAGE_FILTERS, STEP_LABELS, stepPosition, type StageKey } from "@/lib/customer-stage";
+import { AutoRefresh } from "../auto-refresh";
 import { todayIST } from "@/lib/dates";
 import { formatPhone } from "@/lib/phone";
 import { listBusinesses, loadAgency } from "@/lib/page-data";
@@ -22,7 +23,7 @@ type Row = {
   consent_source: string | null;
   opted_out_at: string | null;
   created_at: string;
-  review_requests: { stage: string; link_tapped_at: string | null; started_at: string }[];
+  review_requests: { id: string; stage: string; link_tapped_at: string | null; started_at: string }[];
   visits: { visited_at: string }[];
 };
 
@@ -48,7 +49,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
 
   const { data, error } = await supabase
     .from("customers")
-    .select("id, name, phone, language, consent_at, consent_source, opted_out_at, created_at, review_requests(stage, link_tapped_at, started_at), visits(visited_at)")
+    .select("id, name, phone, language, consent_at, consent_source, opted_out_at, created_at, review_requests(id, stage, link_tapped_at, started_at), visits(visited_at)")
     .eq("business_id", business.id)
     .order("created_at", { ascending: false })
     .order("started_at", { referencedTable: "review_requests", ascending: false })
@@ -59,6 +60,16 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
   if (error) throw error;
 
   const all = ((data ?? []) as Row[]).map((c) => ({ ...c, stage: customerStage(c, c.review_requests[0]), lastVisit: c.visits[0]?.visited_at ?? null }));
+  // Next scheduled message per review request (agency staff can read jobs).
+  const { data: queued } = await supabase
+    .from("jobs")
+    .select("review_request_id, type, run_at")
+    .eq("business_id", business.id)
+    .eq("state", "queued")
+    .order("run_at");
+  const nextByRequest = new Map<string, { type: string; run_at: string }>();
+  for (const j of queued ?? []) if (j.review_request_id && !nextByRequest.has(j.review_request_id)) nextByRequest.set(j.review_request_id, j);
+  const live = all.some((c) => c.review_requests[0] && RUNNING_STAGES.includes(c.review_requests[0].stage));
   const counts = new Map<string, number>([["all", all.length]]);
   for (const c of all) counts.set(c.stage.key, (counts.get(c.stage.key) ?? 0) + 1);
 
@@ -91,6 +102,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
             <Link href={href({ add: "1" })} className="btn">
               Add customer
             </Link>
+            <AutoRefresh active={live} />
           </>
         }
       />
@@ -135,6 +147,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                     <th>WhatsApp</th>
                     <th>Last visit</th>
                     <th>Where they are</th>
+                    <th>Next step</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -151,13 +164,29 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                         <td className="whitespace-nowrap">{c.lastVisit ? when(c.lastVisit, false) : <span className="hint">—</span>}</td>
                         <td>
                           <Pill tone={c.stage.tone}>{c.stage.label}</Pill>
+                          {c.review_requests[0] && stepPosition(c.review_requests[0].stage) ? (
+                            <div className="hint mt-0.5">{stepPosition(c.review_requests[0].stage)}</div>
+                          ) : null}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {(() => {
+                            const n = c.review_requests[0] ? nextByRequest.get(c.review_requests[0].id) : undefined;
+                            return n ? (
+                              <>
+                                {STEP_LABELS[n.type as keyof typeof STEP_LABELS] ?? n.type}
+                                <div className="hint">at {when(n.run_at)}</div>
+                              </>
+                            ) : (
+                              <span className="hint">—</span>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );
                   })}
                   {shown.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="hint py-6 text-center">
+                      <td colSpan={5} className="hint py-6 text-center">
                         No customers match.
                       </td>
                     </tr>

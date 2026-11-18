@@ -80,8 +80,8 @@ export async function CustomerDrawer({
   ]);
   const current = requests[0];
   // Jobs are agency-only (row-level security), which is who sees this panel.
-  const { data: nextJobs } = current
-    ? await supabase.from("jobs").select("type, run_at, state, last_error").eq("review_request_id", current.id).in("state", ["queued", "failed"]).order("run_at")
+  const { data: steps } = current
+    ? await supabase.from("jobs").select("type, run_at, state, last_error").eq("review_request_id", current.id).order("run_at").order("id")
     : { data: [] };
   const taps = requests.flatMap((r) =>
     ((r.short_links as unknown as { code: string; link_taps: { tapped_at: string; user_agent: string | null }[] }[]) ?? []).flatMap((l) =>
@@ -146,12 +146,39 @@ export async function CustomerDrawer({
               {STAGE_TEXT[current.stage] ?? current.stage}
               {running ? "" : ` · ${when(current.started_at)}`}
             </div>
-            {(nextJobs ?? []).map((j, i) => (
-              <div key={i} className={j.state === "failed" ? "text-[#9f1d1d]" : "hint"}>
-                {j.state === "failed" ? `Couldn't send ${JOB_TEXT[j.type]?.toLowerCase() ?? j.type}: ${j.last_error}` : `Next: ${JOB_TEXT[j.type] ?? j.type} at ${when(j.run_at)}`}
-                {j.state === "queued" && j.last_error && j.last_error !== "skipped" ? ` (last try: ${j.last_error})` : ""}
-              </div>
-            ))}
+            <ol className="mt-2 space-y-1.5" aria-label="Steps">
+              {(steps ?? [])
+                .filter((j) => j.type !== "expire" || j.state !== "cancelled")
+                .map((j, i) => {
+                  const label = JOB_TEXT[j.type] ?? j.type;
+                  const skipped = j.state === "done" && j.last_error === "skipped";
+                  const status =
+                    j.state === "done" && !skipped
+                      ? { mark: "✓", text: j.type === "expire" ? `closed ${when(j.run_at)}` : `sent ${when(j.run_at)}`, cls: "text-ink" }
+                      : skipped
+                        ? { mark: "–", text: "not needed", cls: "text-muted" }
+                        : j.state === "cancelled"
+                          ? { mark: "–", text: j.type === "send_reminder" ? "not needed: link tapped" : "cancelled", cls: "text-muted" }
+                          : j.state === "failed"
+                            ? { mark: "!", text: `couldn't send: ${j.last_error}`, cls: "text-[#9f1d1d]" }
+                            : { mark: "○", text: `next, at ${when(j.run_at)}${j.last_error && j.last_error !== "skipped" ? ` (last try: ${j.last_error})` : ""}`, cls: "text-[#8a3b0a] font-medium" };
+                  return (
+                    <li key={i} className={`flex gap-2 text-[13px] ${status.cls}`}>
+                      <span className="w-3 flex-none text-center" aria-hidden>
+                        {status.mark}
+                      </span>
+                      <span>
+                        {label}: {status.text}
+                      </span>
+                    </li>
+                  );
+                })}
+            </ol>
+            {current.stage === "checkin_sent" ? (
+              <p className="hint mt-1.5">Waiting for a reply. The review link goes when they reply, or at the time above if they don&apos;t.</p>
+            ) : current.stage === "link_sent" ? (
+              <p className="hint mt-1.5">Waiting for a tap. If they tap, the reminder is cancelled and the thank-you goes.</p>
+            ) : null}
           </div>
         ) : null}
         {running ? (
