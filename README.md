@@ -35,6 +35,7 @@ The database schema already covers all of module 1 (the review engine), so stage
 
 | Change | File |
 |---|---|
+| Server region (keep next to the Mumbai database) | `vercel.json` (`bom1`) |
 | Colours, fonts, radii, buttons, pills | `src/app/globals.css` (tokens at the top) |
 | Sidebar menu (add or rename a screen) | `src/lib/nav.ts` |
 | Business form rules, review-link logic, "missing setup" list | `src/lib/business.ts` |
