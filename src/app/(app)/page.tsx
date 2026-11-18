@@ -74,7 +74,7 @@ export default async function OverviewPage() {
         </Empty>
       ) : (
         <>
-          <div className="mb-7 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+          <div className="mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               ["Customers", sum("customers"), `${sum("canMessage")} can be messaged`],
               ["Review requests sent", requests, requests ? `This month, ${businesses.length} businesses` : "Start when the message sequence is on"],
